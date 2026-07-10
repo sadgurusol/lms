@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "image",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["media_id", "alt"],
+  "properties": {
+    "media_id": { "type": "string", "format": "uuid" },
+    "alt": { "type": "string" },
+    "caption": { "type": "string" },
+    "width": { "type": "integer", "minimum": 1 },
+    "height": { "type": "integer", "minimum": 1 }
+  }
+}

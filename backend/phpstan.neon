@@ -1,0 +1,34 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+
+parameters:
+    level: 6
+    paths:
+        - app
+        - database
+        - tests
+
+    # Level 8 is the goal (docs/09-roadmap.md, M0). Getting there means fully
+    # typing the Eloquent layer; raise it once the model surface stops growing.
+
+    ignoreErrors:
+        # Pest binds test closures to a TestCase at runtime, but statically they
+        # are Pest\PendingCalls\TestCall. `$this->course` in a beforeEach and
+        # `$this->seed()` are both correct and both unresolvable. This is a
+        # Larastan/Pest interop gap, not a defect in the tests.
+        -
+            identifier: property.notFound
+            path: tests/*
+            message: '#Access to an undefined property Pest\\.*::#'
+        -
+            identifier: method.notFound
+            path: tests/*
+            message: '#Call to an undefined method Pest\\.*::#'
+
+        # DB::transaction()'s template return type is unresolvable when the
+        # callback is a bare callable rather than a closure literal.
+        -
+            identifier: argument.templateType
+            path: tests/*
+
+        - identifier: missingType.iterableValue

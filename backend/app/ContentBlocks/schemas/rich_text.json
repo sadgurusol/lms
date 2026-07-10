@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "rich_text",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "body"],
+  "properties": {
+    "format": { "const": "portable_text" },
+    "body": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["_type"],
+        "properties": {
+          "_type": { "type": "string" },
+          "style": { "enum": ["normal", "h2", "h3", "h4", "blockquote", "code"] },
+          "listItem": { "enum": ["bullet", "number"] },
+          "level": { "type": "integer", "minimum": 1, "maximum": 6 },
+          "children": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["_type", "text"],
+              "properties": {
+                "_type": { "type": "string" },
+                "text": { "type": "string" },
+                "marks": {
+                  "type": "array",
+                  "items": { "type": "string" }
+                }
+              }
+            }
+          },
+          "markDefs": { "type": "array" }
+        }
+      }
+    }
+  }
+}

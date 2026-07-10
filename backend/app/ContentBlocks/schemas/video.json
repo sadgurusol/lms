@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "video",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["media_id"],
+  "properties": {
+    "media_id": { "type": "string", "format": "uuid" },
+    "playback_id": { "type": "string" },
+    "duration_s": { "type": "integer", "minimum": 0 },
+    "poster_url": { "type": "string" },
+    "captions": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["lang", "url"],
+        "properties": {
+          "lang": { "type": "string", "minLength": 2, "maxLength": 10 },
+          "url": { "type": "string" },
+          "label": { "type": "string" }
+        }
+      }
+    }
+  }
+}
