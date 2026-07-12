@@ -54,6 +54,12 @@ class Assessment extends Model
         return $this->belongsTo(Course::class);
     }
 
+    /** @return BelongsTo<CourseNode, $this> */
+    public function courseNode(): BelongsTo
+    {
+        return $this->belongsTo(CourseNode::class);
+    }
+
     /** @return HasMany<AssessmentQuestion, $this> */
     public function assessmentQuestions(): HasMany
     {

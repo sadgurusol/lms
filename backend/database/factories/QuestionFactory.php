@@ -6,6 +6,7 @@ use App\Assessments\QuestionType;
 use App\Models\Question;
 use App\Models\QuestionBank;
 use App\Models\QuestionOption;
+use App\Support\FractionalIndex;
 use Illuminate\Database\Eloquent\Factories\Factory;
 
 /** @extends Factory<Question> */
@@ -37,13 +38,17 @@ class QuestionFactory extends Factory
     public function withOptions(array $options): static
     {
         return $this->afterCreating(function (Question $question) use ($options) {
+            // Not sprintf('a%02d'): that mints a00, a10, a20 — keys ending in
+            // '0', which no key may (see the sort_key CHECK constraint).
+            $keys = FractionalIndex::sequence(count($options));
+
             foreach ($options as $i => $option) {
                 QuestionOption::create([
                     'question_id' => $question->id,
                     'body' => ['text' => $option['text']],
                     'is_correct' => $option['correct'] ?? false,
                     'match_key' => $option['match_key'] ?? null,
-                    'sort_key' => sprintf('a%02d', $i),
+                    'sort_key' => $keys[$i],
                 ]);
             }
         });

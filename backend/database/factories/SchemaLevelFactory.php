@@ -24,7 +24,9 @@ class SchemaLevelFactory extends Factory
             'name' => $name,
             'plural_name' => Str::plural($name),
             'depth' => 0,
-            'sort_key' => 'a0',
+            // FractionalIndex::between(null, null). A key must never end in '0'
+            // — see the sort_key CHECK constraint.
+            'sort_key' => 'V',
             'min_occurrences' => 0,
             'max_occurrences' => null,
             'allows_content' => false,
@@ -35,7 +37,7 @@ class SchemaLevelFactory extends Factory
         ];
     }
 
-    public function under(SchemaLevel $parent, string $sortKey = 'a0'): static
+    public function under(SchemaLevel $parent, string $sortKey = 'V'): static
     {
         return $this->state(fn () => [
             'schema_version_id' => $parent->schema_version_id,

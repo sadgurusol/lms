@@ -49,6 +49,26 @@ class Course extends Model
 
     public const STATE_ARCHIVED = 'archived';
 
+    /**
+     * A published course is read-only: its content is a frozen snapshot learners
+     * are reading. To change it you start a new version (revise), which returns
+     * the course to draft. An archived course is closed. Every other state is a
+     * working draft in some phase of review, and is editable.
+     *
+     * This is a property of the course's *state*, not of the actor — even an
+     * admin edits through a new version, never over a live publication. So the
+     * mutation controllers check this in addition to the permission policy.
+     */
+    public function isEditable(): bool
+    {
+        return in_array($this->workflow_state, [
+            self::STATE_DRAFT,
+            self::STATE_CHANGES_REQUESTED,
+            self::STATE_IN_REVIEW,
+            self::STATE_APPROVED,
+        ], true);
+    }
+
     /** @return BelongsTo<SchemaVersion, $this> */
     public function schemaVersion(): BelongsTo
     {
@@ -76,6 +96,12 @@ class Course extends Model
     public function nodes(): HasMany
     {
         return $this->hasMany(CourseNode::class);
+    }
+
+    /** @return HasMany<Assessment, $this> */
+    public function assessments(): HasMany
+    {
+        return $this->hasMany(Assessment::class);
     }
 
     /** @return HasMany<CoursePublication, $this> */

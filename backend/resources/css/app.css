@@ -1,9 +1,15 @@
 @import 'tailwindcss';
 
-@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
-@source '../../storage/framework/views/*.php';
-
+/*
+ * The studio's tokens. Deliberately NOT shared with the learner app: the studio
+ * is a dense professional tool, the learner app is a reading experience
+ * (docs/13 §7). Same brand palette, different scales.
+ */
 @theme {
-    --font-sans: 'Instrument Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji',
-        'Segoe UI Symbol', 'Noto Color Emoji';
+    --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+
+:root {
+    color-scheme: light dark;
 }

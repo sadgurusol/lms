@@ -2,11 +2,14 @@
 
 namespace App\Services\Publishing;
 
+use App\Ai\EmbeddingsClient;
+use App\Jobs\EmbedPublicationJob;
 use App\Models\AuditLog;
 use App\Models\Course;
 use App\Models\CoursePublication;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use RuntimeException;
 
 final class PublishCourse
 {
@@ -56,6 +59,13 @@ final class PublishCourse
         // worker reads a publication that does not exist yet.
         // DB::afterCommit(fn () => WarmPublicationCache::dispatch($publication));
 
+        // Embed the content for the AI tutor's retrieval, off the request. The
+        // transaction has committed, so the publication is safe to load in the
+        // job. Only queued when embeddings are configured, to avoid dead work.
+        if (app(EmbeddingsClient::class)->configured()) {
+            EmbedPublicationJob::dispatch($publication->id);
+        }
+
         return $publication;
     }
 
@@ -81,6 +91,33 @@ final class PublishCourse
             AuditLog::record($actor, 'course.publication_promoted', $course,
                 before: ['publication_id' => $previous],
                 after: ['publication_id' => $publication->id, 'number' => $publication->number],
+            );
+
+            return $course->refresh();
+        });
+    }
+
+    /**
+     * Start a new version of a published course.
+     *
+     * There is nothing to copy: the draft tree already equals the live snapshot
+     * (a published course is read-only, so it cannot have diverged). Reopening it
+     * for editing is a single state change — draft again — while the publication
+     * learners read stays frozen. The next publish becomes version N+1.
+     */
+    public function revise(Course $course, User $actor): Course
+    {
+        return DB::transaction(function () use ($course, $actor) {
+            $course = Course::lockForUpdate()->findOrFail($course->id);
+
+            if ($course->workflow_state !== Course::STATE_PUBLISHED) {
+                throw new RuntimeException('Only a published course can be revised into a new version.');
+            }
+
+            $course->update(['workflow_state' => Course::STATE_DRAFT]);
+
+            AuditLog::record($actor, 'course.revision_started', $course,
+                after: ['from_publication_id' => $course->latest_publication_id],
             );
 
             return $course->refresh();

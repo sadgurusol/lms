@@ -5,6 +5,7 @@ use App\Entitlements\EntitlementResolver;
 use App\Entitlements\Grant;
 use App\Entitlements\GrantSource;
 use App\Entitlements\Sources\CompGrantSource;
+use App\Models\Client;
 use App\Models\CompGrant;
 use App\Models\Course;
 use App\Models\Product;
@@ -211,11 +212,13 @@ it('keys the cache by client context', function () {
     $product = productWith($this->course);
     compGrant($this->user, $product);
 
-    // CompGrantSource ignores the client context, so both resolve — but they
+    $client = Client::factory()->create();
+
+    // A comp grant is not client-scoped, so both sessions resolve it — but they
     // must not share a cache entry, or a client-scoped grant would bleed into
-    // the user's B2C session.
+    // the user's personal session.
     expect(($this->resolver)()->entitles($this->user, $this->course, clientId: null))->toBeTrue()
-        ->and(($this->resolver)()->entitles($this->user, $this->course, clientId: 'abc-school'))->toBeTrue();
+        ->and(($this->resolver)()->entitles($this->user, $this->course, clientId: $client->id))->toBeTrue();
 });
 
 /*

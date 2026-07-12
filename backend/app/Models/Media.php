@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\SoftDeletes;
+use Illuminate\Support\Facades\Storage;
 
 /**
  * @property string $id
@@ -63,6 +64,29 @@ class Media extends Model
     public function isReady(): bool
     {
         return $this->status === self::STATUS_READY;
+    }
+
+    /**
+     * A servable URL for the object. Video is played through a provider, so it
+     * stays null for video.
+     *
+     * A local disk is served through the app (see MediaFileController) rather
+     * than the `/storage` symlink: the symlink bypasses middleware under
+     * `artisan serve`, so it carries no CORS headers and the cross-origin
+     * learner web app cannot load it. Object storage (S3) returns its own bucket
+     * URL, configured with CORS at the bucket.
+     */
+    public function url(): ?string
+    {
+        if ($this->kind === self::KIND_VIDEO) {
+            return null;
+        }
+
+        if (config("filesystems.disks.{$this->disk}.driver") === 'local') {
+            return route('api.media.file', ['media' => $this->id]);
+        }
+
+        return Storage::disk($this->disk)->url($this->path);
     }
 
     /** Only video needs a transcode round-trip; everything else is ready on upload. */

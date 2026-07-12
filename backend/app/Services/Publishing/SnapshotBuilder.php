@@ -8,6 +8,7 @@ use App\Models\Course;
 use App\Models\CourseNode;
 use App\Models\Media;
 use App\Models\SchemaLevel;
+use App\Services\Media\MediaPlayback;
 use Illuminate\Support\Collection;
 
 /**
@@ -17,6 +18,8 @@ use Illuminate\Support\Collection;
  */
 final class SnapshotBuilder
 {
+    public function __construct(private readonly MediaPlayback $playback) {}
+
     /** @return array<string, mixed> */
     public function build(Course $course): array
     {
@@ -142,6 +145,18 @@ final class SnapshotBuilder
         if ($type->requiresReadyMedia() && $media = $block->media) {
             $payload['playback_id'] ??= $media->playback_id;
             $payload['duration_s'] ??= $media->duration_s;
+
+            if ($type === BlockType::Video) {
+                // The streaming source (HLS from a provider, or a direct mp4 from
+                // our own endpoint in dev), plus a poster — everything the player
+                // needs to start without another request.
+                if ($resolved = $this->playback->video($media)) {
+                    $payload = [...$payload, ...$resolved];
+                }
+            } elseif (($url = $media->url()) !== null) {
+                // A servable URL for image/attachment.
+                $payload['url'] ??= $url;
+            }
         }
 
         return [

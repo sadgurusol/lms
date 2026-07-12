@@ -61,13 +61,19 @@ class User extends Authenticatable
     /**
      * The client context of the current session, or null for B2C.
      *
-     * Once launch sessions exist (M9) this reads the access token's `cid` claim.
-     * It must never be read from a request parameter — that is how one school
-     * ends up reading another school's data.
+     * Read from the access token minted by the launch exchange. It must never be
+     * read from a request parameter — that is how one school ends up reading
+     * another school's data.
      */
     public function currentClientId(): ?string
     {
-        return null;
+        // Sanctum types this as PersonalAccessToken, but a session-authenticated
+        // request yields a TransientToken, which is not a model and has no
+        // client. isset() answers correctly for both without an instanceof that
+        // static analysis can prove is always true.
+        $token = $this->currentAccessToken();
+
+        return isset($token->client_id) ? (string) $token->client_id : null;
     }
 
     public function isActive(): bool

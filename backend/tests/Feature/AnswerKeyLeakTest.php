@@ -49,7 +49,7 @@ function attemptFor(Question $question, array $settings = []): array
         'assessment_id' => $assessment->id,
         'question_id' => $question->id,
         'points' => 10,
-        'sort_key' => 'a0',
+        'sort_key' => 'V',
     ]);
 
     $attempt = app(StartAttempt::class)->handle($assessment->fresh(), test()->learner);

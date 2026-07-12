@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Concerns\HasUuids;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 /**
@@ -22,6 +23,12 @@ class QuestionBank extends Model
 {
     /** @use HasFactory<QuestionBankFactory> */
     use HasFactory, HasUuids;
+
+    /** @return BelongsTo<Course, $this> */
+    public function course(): BelongsTo
+    {
+        return $this->belongsTo(Course::class);
+    }
 
     /** @return HasMany<Question, $this> */
     public function questions(): HasMany

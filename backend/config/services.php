@@ -35,4 +35,19 @@ return [
         ],
     ],
 
+    'mux' => [
+        'token_id' => env('MUX_TOKEN_ID'),
+        'token_secret' => env('MUX_TOKEN_SECRET'),
+    ],
+
+    'anthropic' => [
+        'key' => env('ANTHROPIC_API_KEY'),
+        'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
+    ],
+
+    'voyage' => [
+        'key' => env('VOYAGE_API_KEY'),
+        'model' => env('VOYAGE_MODEL', 'voyage-3'),
+    ],
+
 ];

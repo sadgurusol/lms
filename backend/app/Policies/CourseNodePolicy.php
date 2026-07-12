@@ -3,7 +3,6 @@
 namespace App\Policies;
 
 use App\Authorization\Permissions;
-use App\Models\ContentBlock;
 use App\Models\CourseNode;
 use App\Models\User;
 
@@ -43,15 +42,15 @@ class CourseNodePolicy
             && $this->coursePolicy->update($user, $node->course);
     }
 
+    /**
+     * Creating a block is authorized against the *node* it will hang under, so
+     * this check lives here. Editing and deleting an existing block are keyed to
+     * the block itself — see ContentBlockPolicy, which Gate resolves from the
+     * ContentBlock argument.
+     */
     public function attachBlock(User $user, CourseNode $node): bool
     {
         return $user->can(Permissions::BLOCK_CREATE)
             && $this->coursePolicy->update($user, $node->course);
-    }
-
-    public function updateBlock(User $user, ContentBlock $block): bool
-    {
-        return $user->can(Permissions::BLOCK_UPDATE)
-            && $this->coursePolicy->update($user, $block->courseNode->course);
     }
 }

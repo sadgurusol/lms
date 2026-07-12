@@ -1,5 +1,8 @@
 <?php
 
+use App\Http\Middleware\EnsureClientScope;
+use App\Http\Middleware\EnsureStaff;
+use App\Http\Middleware\HandleInertiaRequests;
 use Illuminate\Foundation\Application;
 use Illuminate\Foundation\Configuration\Exceptions;
 use Illuminate\Foundation\Configuration\Middleware;
@@ -13,7 +16,17 @@ return Application::configure(basePath: dirname(__DIR__))
         health: '/up',
     )
     ->withMiddleware(function (Middleware $middleware): void {
-        //
+        $middleware->alias([
+            'client.scope' => EnsureClientScope::class,
+            'staff' => EnsureStaff::class,
+        ]);
+
+        // Inertia shares auth state with every studio page.
+        $middleware->web(append: [HandleInertiaRequests::class]);
+
+        // There is no route named `login`: the studio owns the only session
+        // login, and the API is token-only.
+        $middleware->redirectGuestsTo(fn () => route('studio.login'));
     })
     ->withExceptions(function (Exceptions $exceptions): void {
         $exceptions->shouldRenderJsonWhen(

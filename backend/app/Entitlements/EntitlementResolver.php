@@ -94,6 +94,18 @@ final class EntitlementResolver
      *
      * @return Collection<int, Course>
      */
+    /**
+     * The products this user is entitled to — the same set that backs
+     * {@see coursesFor()}, exposed so the catalogue can mark what's already owned.
+     *
+     * @return list<string>
+     */
+    public function entitledProductIds(User $user, ?string $clientId = null): array
+    {
+        return array_keys($this->grantsByProduct($user, $clientId));
+    }
+
+    /** @return Collection<int, Course> */
     public function coursesFor(User $user, ?string $clientId = null): Collection
     {
         $productIds = array_keys($this->grantsByProduct($user, $clientId));

@@ -64,6 +64,12 @@ class CourseNode extends Model
         return $this->hasMany(ContentBlock::class)->orderBy('sort_key');
     }
 
+    /** @return HasMany<Assessment, $this> */
+    public function assessments(): HasMany
+    {
+        return $this->hasMany(Assessment::class);
+    }
+
     /**
      * Every descendant, in tree order, via the ltree path. One query.
      *
