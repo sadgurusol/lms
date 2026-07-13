@@ -18,6 +18,9 @@ import 'screens/store_screen.dart';
 import 'screens/tutor_screen.dart';
 
 void main() {
+  // Required before any plugin/platform-channel use (secure storage in restore()).
+  WidgetsFlutterBinding.ensureInitialized();
+
   final api = ApiClient();
   final auth = AuthState(api)..restore();
 

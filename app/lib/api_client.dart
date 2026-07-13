@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
@@ -30,6 +31,10 @@ class ApiClient {
   final FlutterSecureStorage _storage;
   String? _token;
 
+  /// Invoked when the server rejects our token (401). The token is dropped and
+  /// this fires so the app can return to the login screen — see [AuthState].
+  void Function()? onUnauthorized;
+
   bool get isAuthenticated => _token != null;
 
   /// Auth header for playing a locally-streamed video, which is served by our
@@ -40,6 +45,24 @@ class ApiClient {
   /// Load a token saved from a previous session.
   Future<void> restore() async {
     _token = await _storage.read(key: _tokenKey);
+  }
+
+  /// Check the restored token against the backend before trusting it. A stale
+  /// token (different environment), a revoked one (401), or an unreachable
+  /// backend all resolve to "not signed in" so the app lands on login rather
+  /// than looping on a broken dashboard.
+  Future<bool> tokenIsValid() async {
+    if (_token == null) return false;
+    try {
+      final res = await _dio.get('/me/courses');
+      if (res.statusCode == 401) {
+        _handleUnauthorized();
+        return false;
+      }
+      return (res.statusCode ?? 500) < 500;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
@@ -159,6 +182,7 @@ class ApiClient {
         final json = jsonDecode(raw);
         if (json is Map && json['message'] is String) message = json['message'] as String;
       } catch (_) {}
+      if (res.statusCode == 401) _handleUnauthorized();
       throw ApiException(message, unauthorized: res.statusCode == 401);
     }
 
@@ -248,11 +272,23 @@ class ApiClient {
     final code = res.statusCode ?? 0;
     if (code >= 200 && code < 300) return;
 
-    if (code == 401) throw ApiException('Your session has expired.', unauthorized: true);
+    if (code == 401) {
+      _handleUnauthorized();
+      throw ApiException('Your session has expired.', unauthorized: true);
+    }
 
     final data = res.data;
     final message = data is Map && data['message'] is String ? data['message'] as String : fallback;
     throw ApiException(message);
+  }
+
+  /// Drop the rejected token and let the app return to login. A stale token from
+  /// a previous session (or a revoked one) is cleared here, so a restart lands
+  /// on the login screen rather than looping on the dashboard.
+  void _handleUnauthorized() {
+    _token = null;
+    unawaited(_storage.delete(key: _tokenKey));
+    onUnauthorized?.call();
   }
 }
 
