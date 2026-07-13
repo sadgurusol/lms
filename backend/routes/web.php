@@ -20,6 +20,8 @@ use App\Http\Controllers\Studio\SchemaController;
 use App\Http\Controllers\Studio\SchemaLevelController;
 use App\Http\Controllers\Studio\SchemaVersionController;
 use App\Http\Controllers\Studio\SessionController;
+use App\Http\Controllers\Studio\SetPasswordController;
+use App\Http\Controllers\Studio\StaffController;
 use Illuminate\Support\Facades\Route;
 
 Route::redirect('/', '/studio');
@@ -35,11 +37,22 @@ Route::prefix('studio')->name('studio.')->group(function () {
     Route::middleware('guest')->group(function () {
         Route::get('/login', [SessionController::class, 'create'])->name('login');
         Route::post('/login', [SessionController::class, 'store'])->middleware('throttle:login');
+
+        // Where a staff invitation lands: set a password, then sign in.
+        Route::get('/set-password/{token}', [SetPasswordController::class, 'show'])->name('password.set');
+        Route::post('/set-password', [SetPasswordController::class, 'store'])
+            ->middleware('throttle:login')->name('password.store');
     });
 
     Route::middleware(['auth', 'staff'])->group(function () {
         Route::post('/logout', [SessionController::class, 'destroy'])->name('logout');
         Route::get('/', DashboardController::class)->name('dashboard');
+
+        // Staff management (admin-only via user.manage inside the controller).
+        Route::get('/users', [StaffController::class, 'index'])->name('users.index');
+        Route::post('/users', [StaffController::class, 'store'])->name('users.store');
+        Route::patch('/users/{user}', [StaffController::class, 'update'])->name('users.update');
+        Route::post('/users/{user}/invite', [StaffController::class, 'invite'])->name('users.invite');
 
         Route::get('/schemas', [SchemaController::class, 'index'])->name('schemas.index');
         Route::post('/schemas', [SchemaController::class, 'store'])->name('schemas.store');

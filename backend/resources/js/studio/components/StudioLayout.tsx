@@ -16,6 +16,7 @@ const NAV: NavItem[] = [
     { label: 'Question bank', href: '/studio/questions', permission: 'question.manage' },
     { label: 'Clients', href: '/ops/clients', permission: 'client.view' },
     { label: 'Products', href: '/ops/products', permission: 'product.view' },
+    { label: 'Staff', href: '/studio/users', permission: 'user.manage' },
 ];
 
 export default function StudioLayout({ title, children }: { title: string; children: ReactNode }) {

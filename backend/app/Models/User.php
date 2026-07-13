@@ -39,6 +39,12 @@ class User extends Authenticatable
 
     public const KIND_CLIENT_PROVISIONED = 'client_provisioned';
 
+    public const STATUS_INVITED = 'invited';
+
+    public const STATUS_ACTIVE = 'active';
+
+    public const STATUS_SUSPENDED = 'suspended';
+
     /**
      * @return array<string, string>
      */

@@ -34,6 +34,7 @@ class HandleInertiaRequests extends Middleware
         Permissions::PRODUCT_VIEW,
         Permissions::CLIENT_VIEW,
         Permissions::AUDIT_VIEW,
+        Permissions::USER_MANAGE,
     ];
 
     /** @return array<string, mixed> */

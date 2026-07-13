@@ -80,6 +80,9 @@ final class Permissions
 
     public const ATTEMPT_VIEW_ANY = 'attempt.view.any';
 
+    // Users / staff
+    public const USER_MANAGE = 'user.manage';
+
     // Media
     public const MEDIA_UPLOAD = 'media.upload';
 
