@@ -17,6 +17,7 @@
         "laravel/tinker": "^3.0",
         "opis/json-schema": "^2.6",
         "predis/predis": "^3.5",
+        "resend/resend-php": "^1.5",
         "spatie/laravel-permission": "^8.3",
         "tightenco/ziggy": "^2.6"
     },
