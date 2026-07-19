@@ -3,6 +3,7 @@
 namespace App\Ai;
 
 use App\Tutor\TutorChat;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
@@ -83,17 +84,29 @@ class AnthropicClient
             throw new RuntimeException('AI is not configured (missing ANTHROPIC_API_KEY).');
         }
 
-        $response = Http::withHeaders([
-            'x-api-key' => $key,
-            'anthropic-version' => self::API_VERSION,
-        ])
-            ->timeout(300)
-            ->post(self::ENDPOINT, [
-                'model' => (string) config('services.anthropic.model'),
-                'max_tokens' => $maxTokens,
-                'system' => $system,
-                'messages' => [['role' => 'user', 'content' => $content]],
-            ]);
+        try {
+            $response = Http::withHeaders([
+                'x-api-key' => $key,
+                'anthropic-version' => self::API_VERSION,
+            ])
+                ->connectTimeout(20)
+                ->timeout(300)
+                // The connection to Anthropic can blip (transient network / DNS);
+                // retry a couple of times before giving up on the whole run.
+                ->retry(3, 3000, throw: true)
+                ->post(self::ENDPOINT, [
+                    'model' => (string) config('services.anthropic.model'),
+                    'max_tokens' => $maxTokens,
+                    'system' => $system,
+                    'messages' => [['role' => 'user', 'content' => $content]],
+                ]);
+        } catch (ConnectionException $e) {
+            throw new RuntimeException(
+                'Could not reach the AI service (network/connection timeout). '
+                .'Check the server can reach api.anthropic.com over HTTPS, then retry.',
+                previous: $e,
+            );
+        }
 
         if ($response->failed()) {
             throw new RuntimeException("The AI service failed (status {$response->status()}).");
