@@ -22,6 +22,20 @@ class AnthropicClient
     private const API_VERSION = '2023-06-01';
 
     /**
+     * Transport options shared by every request. Forces IPv4 when configured,
+     * to sidestep hosts that advertise but can't route IPv6 to Anthropic (a
+     * common cause of connect timeouts / cURL 28).
+     *
+     * @return array<string, mixed>
+     */
+    private function transportOptions(): array
+    {
+        return config('services.anthropic.force_ipv4', true)
+            ? ['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]]
+            : [];
+    }
+
+    /**
      * @param  list<array{role: string, content: string}>  $messages
      */
     public function chat(string $system, array $messages, int $maxTokens = 1024): AiReply
@@ -36,6 +50,7 @@ class AnthropicClient
             'x-api-key' => $key,
             'anthropic-version' => self::API_VERSION,
         ])
+            ->withOptions($this->transportOptions())
             ->timeout(60)
             ->post(self::ENDPOINT, [
                 'model' => (string) config('services.anthropic.model'),
@@ -89,6 +104,7 @@ class AnthropicClient
                 'x-api-key' => $key,
                 'anthropic-version' => self::API_VERSION,
             ])
+                ->withOptions($this->transportOptions())
                 ->connectTimeout(20)
                 ->timeout(300)
                 // The connection to Anthropic can blip (transient network / DNS);
@@ -152,7 +168,7 @@ class AnthropicClient
             'x-api-key' => $key,
             'anthropic-version' => self::API_VERSION,
         ])
-            ->withOptions(['stream' => true])
+            ->withOptions(['stream' => true] + $this->transportOptions())
             ->timeout(120)
             ->post(self::ENDPOINT, [
                 'model' => (string) config('services.anthropic.model'),

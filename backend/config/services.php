@@ -46,6 +46,11 @@ return [
         // Output ceiling for course generation. A whole-course outline with
         // teaching text is large; too low a cap truncates the JSON mid-reply.
         'generation_max_tokens' => (int) env('GENERATION_MAX_TOKENS', 16000),
+        // Force IPv4 when calling the API. Many hosts (notably DigitalOcean
+        // droplets) advertise IPv6 to api.anthropic.com but can't route it, so
+        // curl stalls on the AAAA address and times out (cURL error 28). Set
+        // ANTHROPIC_FORCE_IPV4=false only if you truly need IPv6.
+        'force_ipv4' => filter_var(env('ANTHROPIC_FORCE_IPV4', true), FILTER_VALIDATE_BOOL),
     ],
 
     'voyage' => [
