@@ -66,6 +66,17 @@ long" message instead of a generic parse error. An unparseable reply is logged
 ## Requires
 
 `ANTHROPIC_API_KEY` (chat/generation). A queue worker for `GenerateCourseJob`.
-PDFs are stored on the default disk during the run and deleted afterwards.
-`GENERATION_MAX_TOKENS` (default 16000) caps generation output — raise it for
-bigger courses, but a whole textbook still wants chapter-by-chapter passes.
+PDFs are stored on the default disk during the run and deleted afterwards (a
+failed run keeps its PDF so it can be retried).
+
+`GENERATION_MAX_TOKENS` (default 16000) caps the *outline* pass. `GENERATION_TIMEOUT`
+(default 1800s) is the wall-clock budget for a whole run — one API call per topic
+adds up, so big courses need it. **Three timers must stay ordered**: the queue
+connection's `retry_after` (default 2100s) **must exceed** `GENERATION_TIMEOUT`,
+which **must not exceed** the worker's `--timeout`. If `retry_after` is smaller,
+the queue re-dispatches the job while it is still running. On DigitalOcean set
+`ANTHROPIC_FORCE_IPV4=true` (the default) to avoid IPv6 connect timeouts.
+
+Very large textbooks still want **chapter-by-chapter** runs — even two-phase, a
+single job that makes hundreds of calls will bump the timeout. A batched design
+(one short job per topic) is the next step if that ceiling is reached.

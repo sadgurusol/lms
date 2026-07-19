@@ -23,9 +23,14 @@ class GenerateCourseJob implements ShouldQueue
 
     public int $tries = 1;
 
-    public int $timeout = 600;
+    public int $timeout;
 
-    public function __construct(public readonly string $generationId) {}
+    public function __construct(public readonly string $generationId)
+    {
+        // Two-phase generation is one API call per topic, so a real course can
+        // run for many minutes. Configurable; keep below the queue retry_after.
+        $this->timeout = (int) config('services.anthropic.generation_timeout', 1800);
+    }
 
     public function handle(BlueprintGenerator $blueprints, CourseBuilder $builder): void
     {
