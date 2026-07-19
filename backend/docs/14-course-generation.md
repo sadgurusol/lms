@@ -12,17 +12,25 @@ nothing is auto-published.
    mode generates from the model's own knowledge (e.g. a NEET syllabus).
 2. A `CourseGeneration` row is created (`pending`) and `GenerateCourseJob` is
    queued. The studio page polls until it finishes.
-3. The job:
-   - `BlueprintGenerator` builds a prompt describing the **schema hierarchy**
-     (level names, nesting, occurrence limits, which levels carry content) and
-     asks Claude for a JSON outline. For a PDF it sends the document natively
+3. The job runs `BlueprintGenerator` in **two phases** so it scales to whole
+   textbooks instead of truncating in one giant reply:
+   - **Outline** — one small request for the course *structure* (levels + titles
+     only, no teaching text), described against the **schema hierarchy** (level
+     names, nesting, occurrence limits). For a PDF it sends the document natively
      (Claude reads PDFs, text and figures); for a brief it sends the text.
-   - `CourseBuilder` turns that blueprint into a draft course using the same
-     authoring services a human uses — `CreateCourse`, `CourseTree`,
+   - **Content** — a separate request per content-bearing node writes just that
+     topic's teaching text (plain text, not JSON). Each stays well under the
+     token ceiling. A PDF source is sent **once and prompt-cached**, so the many
+     content calls reuse it cheaply. A content call that fails leaves that node
+     without content rather than sinking the whole course.
+   - `CourseBuilder` then turns the filled blueprint into a draft course using the
+     same authoring services a human uses — `CreateCourse`, `CourseTree`,
      `BlockEditor` — mapping level names to schema levels and converting the
      content text to Portable Text.
 4. On success the generation is `completed` with a link to the draft; on failure
-   it's `failed` with the error. Token usage is recorded per run.
+   it's `failed` with the error, and can be **retried** from the studio (a failed
+   PDF run keeps its upload so no re-upload is needed). Token usage across all
+   phases is summed and recorded per run.
 
 ## Design notes
 
@@ -38,9 +46,6 @@ nothing is auto-published.
 
 ## Not yet built
 
-- **Large-textbook map-reduce**: v1 sends the PDF in one request (Claude's
-  per-request page/size limits apply). Real textbooks want chapter-by-chapter
-  generation — an outline pass then per-chapter content passes.
 - **Interactive study plans**: NEET-style schedules (full-year / 1–2 month) are
   generated as *content* today (a "Study Plan" section — ask for it in the
   brief). A structured plan entity (dated tasks linked to topics/quizzes,

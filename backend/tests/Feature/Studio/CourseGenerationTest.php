@@ -72,19 +72,26 @@ it('refuses generation to a user without course.create', function () {
 it('runs the job end to end, producing a draft course', function () {
     config(['services.anthropic.key' => 'test-key']);
 
-    $blueprint = ['nodes' => [
+    // Phase 1 returns structure only (no content); phase 2 returns plain teaching
+    // text per content-bearing node. Distinguish the two by the request body.
+    $structure = ['nodes' => [
         ['level' => 'Part', 'title' => 'Part One', 'children' => [
             ['level' => 'Chapter', 'title' => 'Cells', 'children' => [
-                ['level' => 'Topic', 'title' => 'The cell', 'content' => 'Cells are the basic unit of life.'],
+                ['level' => 'Topic', 'title' => 'The cell'],
             ]],
         ]],
     ]];
-    Http::fake([
-        'api.anthropic.com/*' => Http::response([
-            'content' => [['type' => 'text', 'text' => json_encode($blueprint)]],
+    Http::fake(fn ($request) => str_contains($request->body(), 'course STRUCTURE')
+        ? Http::response([
+            'content' => [['type' => 'text', 'text' => json_encode($structure)]],
+            'stop_reason' => 'end_turn',
             'usage' => ['input_tokens' => 500, 'output_tokens' => 800],
-        ]),
-    ]);
+        ])
+        : Http::response([
+            'content' => [['type' => 'text', 'text' => 'Cells are the basic unit of life.']],
+            'stop_reason' => 'end_turn',
+            'usage' => ['input_tokens' => 100, 'output_tokens' => 200],
+        ]));
 
     $generation = CourseGeneration::create([
         'requested_by' => $this->author->id,
@@ -103,21 +110,23 @@ it('runs the job end to end, producing a draft course', function () {
     $generation->refresh();
     expect($generation->status)->toBe(CourseGeneration::COMPLETED)
         ->and($generation->course_id)->not->toBeNull()
-        ->and($generation->output_tokens)->toBe(800);
+        // Outline (800) + one content call per content-bearing node (Chapter, Topic).
+        ->and($generation->output_tokens)->toBe(800 + 200 + 200);
 
     $course = $generation->course;
     expect($course->title)->toBe('NEET Biology')
         ->and($course->nodes()->count())->toBe(3);
+
+    $topic = $course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Topic'))->sole();
+    expect($topic->blocks()->where('type', 'rich_text')->exists())->toBeTrue();
 });
 
-it('decodes an outline whose content has raw newlines', function () {
+it('recovers an outline whose JSON has raw newlines', function () {
     config(['services.anthropic.key' => 'test-key']);
 
-    // Raw newlines inside the "content" string — invalid JSON per spec, but the
-    // model emits it constantly. The parser must recover instead of failing.
-    $json = '{"nodes":[{"level":"Part","title":"P","children":['
-        .'{"level":"Chapter","title":"C","children":['
-        ."{\"level\":\"Topic\",\"title\":\"T\",\"content\":\"Line one.\n\nLine two.\"}]}]}]}";
+    // A raw newline inside a "summary" string — invalid JSON per spec, but models
+    // emit it. The parser must recover instead of failing the outline.
+    $json = "{\"nodes\":[{\"level\":\"Part\",\"title\":\"P\",\"summary\":\"Line one.\nLine two.\"}]}";
 
     Http::fake([
         'api.anthropic.com/*' => Http::response([
@@ -142,10 +151,10 @@ it('decodes an outline whose content has raw newlines', function () {
     );
 
     expect($generation->refresh()->status)->toBe(CourseGeneration::COMPLETED)
-        ->and($generation->course->nodes()->count())->toBe(3);
+        ->and($generation->course->nodes()->count())->toBe(1);
 });
 
-it('fails clearly when the reply is truncated at the token ceiling', function () {
+it('fails clearly when the outline is truncated at the token ceiling', function () {
     config(['services.anthropic.key' => 'test-key']);
 
     Http::fake([
@@ -171,7 +180,7 @@ it('fails clearly when the reply is truncated at the token ceiling', function ()
     );
 
     expect($generation->refresh()->status)->toBe(CourseGeneration::FAILED)
-        ->and($generation->error)->toContain('cut off');
+        ->and($generation->error)->toContain('sections');
 });
 
 it('retries a failed generation, re-queuing the job', function () {
