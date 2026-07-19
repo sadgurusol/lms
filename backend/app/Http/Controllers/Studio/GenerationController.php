@@ -3,9 +3,12 @@
 namespace App\Http\Controllers\Studio;
 
 use App\Authorization\Permissions;
+use App\ContentBlocks\BlockType;
 use App\Http\Controllers\Controller;
 use App\Jobs\GenerateCourseJob;
+use App\Models\ContentBlock;
 use App\Models\CourseGeneration;
+use App\Models\CourseNode;
 use App\Models\SchemaVersion;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -41,6 +44,7 @@ class GenerationController extends Controller
                 'course_id' => $g->course_id,
                 'can_retry' => $g->status === CourseGeneration::FAILED
                     && ($g->source_type === CourseGeneration::SOURCE_BRIEF || $g->pdf_path !== null),
+                'progress' => $this->progressFor($g),
                 'schema' => $g->schemaVersion->courseSchema->name.' v'.$g->schemaVersion->version,
                 'created_at' => $g->created_at?->toIso8601String(),
             ]);
@@ -103,6 +107,40 @@ class GenerationController extends Controller
         GenerateCourseJob::dispatch($generation->id);
 
         return back()->with('success', 'Retrying generation — it will update below when ready.');
+    }
+
+    /**
+     * How many of a running generation's topics have their content yet — for a
+     * live "18/40 topics" readout while the content chain works. Two queries, and
+     * only for a processing run that already has its structure built.
+     *
+     * @return array{done: int, total: int}|null
+     */
+    private function progressFor(CourseGeneration $g): ?array
+    {
+        if ($g->status !== CourseGeneration::PROCESSING || $g->course_id === null) {
+            return null;
+        }
+
+        $contentNodeIds = CourseNode::query()
+            ->where('course_id', $g->course_id)
+            ->with('schemaLevel')
+            ->get()
+            ->filter(fn (CourseNode $n) => $n->permitsBlockType(BlockType::RichText->value))
+            ->pluck('id');
+
+        $total = $contentNodeIds->count();
+        if ($total === 0) {
+            return null;
+        }
+
+        $done = ContentBlock::query()
+            ->whereIn('course_node_id', $contentNodeIds)
+            ->where('type', BlockType::RichText->value)
+            ->distinct()
+            ->count('course_node_id');
+
+        return ['done' => $done, 'total' => $total];
     }
 
     /** @return Collection<int, array{id: string, name: non-falsy-string}> */

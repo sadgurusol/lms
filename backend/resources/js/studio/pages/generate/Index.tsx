@@ -12,6 +12,7 @@ type Generation = {
     error: string | null;
     course_id: string | null;
     can_retry: boolean;
+    progress: { done: number; total: number } | null;
     schema: string;
     created_at: string | null;
 };
@@ -89,6 +90,10 @@ export default function GenerateIndex({ generations, schemas }: Props) {
                                                     {g.error ? g.error.slice(0, 60) : 'Failed'}
                                                 </span>
                                                 {g.can_retry && <RetryButton id={g.id} />}
+                                            </span>
+                                        ) : g.progress ? (
+                                            <span className="text-xs text-zinc-500 dark:text-zinc-400">
+                                                {g.progress.done}/{g.progress.total} topics
                                             </span>
                                         ) : (
                                             <span className="text-xs text-zinc-400">working…</span>

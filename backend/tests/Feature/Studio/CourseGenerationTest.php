@@ -11,6 +11,7 @@ use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Inertia\Testing\AssertableInertia;
 
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
@@ -197,6 +198,31 @@ it('resumes an already-built course without rebuilding it', function () {
     $chapter = $course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Chapter'))->sole();
     expect($chapter->blocks()->where('type', 'rich_text')->sole()->payload['body'][0]['children'][0]['text'])
         ->toBe('Real teaching text.');
+});
+
+it('reports live topic progress for a running generation', function () {
+    // One chapter has content, one does not → 1 of 2 topics done.
+    $structure = ['nodes' => [['level' => 'Part', 'title' => 'P', 'children' => [
+        ['level' => 'Chapter', 'title' => 'C', 'content' => 'Already written.'],
+        ['level' => 'Chapter', 'title' => 'D'],
+    ]]]];
+    $course = app(CourseBuilder::class)->build($structure, $this->version, 'Prog', $this->author);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Prog',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'course_id' => $course->id,
+        'status' => CourseGeneration::PROCESSING,
+    ]);
+
+    $this->actingAs($this->author)
+        ->get('/studio/generate')
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->where('generations.0.progress.done', 1)
+            ->where('generations.0.progress.total', 2));
 });
 
 it('recovers an outline whose JSON has raw newlines', function () {
