@@ -10,19 +10,24 @@ import 'models.dart';
 /// A thin wrapper over the learner API. Holds the bearer token, attaches it to
 /// every request, and turns non-2xx into a readable [ApiException].
 class ApiClient {
-  ApiClient({FlutterSecureStorage? storage})
-      : _storage = storage ?? const FlutterSecureStorage() {
-    _dio = Dio(BaseOptions(
-      baseUrl: apiBaseUrl,
-      headers: {'Accept': 'application/json'},
-      // Inspect every status ourselves (see _throwIfError) rather than letting
-      // Dio throw a raw DioException — a 5xx should still surface a clean message.
-      validateStatus: (_) => true,
-    ));
-    _dio.interceptors.add(InterceptorsWrapper(onRequest: (options, handler) {
-      if (_token != null) options.headers['Authorization'] = 'Bearer $_token';
-      handler.next(options);
-    }));
+  ApiClient({FlutterSecureStorage? storage}) : _storage = storage ?? const FlutterSecureStorage() {
+    _dio = Dio(
+      BaseOptions(
+        baseUrl: apiBaseUrl,
+        headers: {'Accept': 'application/json'},
+        // Inspect every status ourselves (see _throwIfError) rather than letting
+        // Dio throw a raw DioException — a 5xx should still surface a clean message.
+        validateStatus: (_) => true,
+      ),
+    );
+    _dio.interceptors.add(
+      InterceptorsWrapper(
+        onRequest: (options, handler) {
+          if (_token != null) options.headers['Authorization'] = 'Bearer $_token';
+          handler.next(options);
+        },
+      ),
+    );
   }
 
   static const _tokenKey = 'access_token';
@@ -39,8 +44,7 @@ class ApiClient {
 
   /// Auth header for playing a locally-streamed video, which is served by our
   /// own (bearer-protected) endpoint rather than a public CDN.
-  Map<String, String> get authHeaders =>
-      _token == null ? const {} : {'Authorization': 'Bearer $_token'};
+  Map<String, String> get authHeaders => _token == null ? const {} : {'Authorization': 'Bearer $_token'};
 
   /// Load a token saved from a previous session.
   Future<void> restore() async {
@@ -66,12 +70,31 @@ class ApiClient {
   }
 
   Future<Map<String, dynamic>> login(String email, String password) async {
-    final res = await _dio.post('/auth/token', data: {
-      'email': email,
-      'password': password,
-      'device_name': 'learner-app',
-    });
+    final res = await _dio.post(
+      '/auth/token',
+      data: {'email': email, 'password': password, 'device_name': 'learner-app'},
+    );
     _throwIfError(res, fallback: 'Sign in failed');
+
+    final body = res.data as Map<String, dynamic>;
+    _token = body['access_token'] as String;
+    await _storage.write(key: _tokenKey, value: _token);
+    return (body['user'] as Map).cast<String, dynamic>();
+  }
+
+  /// Create a new B2C learner account and sign in.
+  Future<Map<String, dynamic>> register(String name, String email, String password) async {
+    final res = await _dio.post(
+      '/auth/register',
+      data: {
+        'name': name,
+        'email': email,
+        'password': password,
+        'password_confirmation': password,
+        'device_name': 'learner-app',
+      },
+    );
+    _throwIfError(res, fallback: 'Sign up failed');
 
     final body = res.data as Map<String, dynamic>;
     _token = body['access_token'] as String;
@@ -143,27 +166,35 @@ class ApiClient {
     return res.data['data']['id'] as String;
   }
 
+  /// The learner's past tutor conversations on a course, newest first.
+  Future<List<TutorConversationSummary>> tutorConversations(String courseId) async {
+    final res = await _dio.get('/me/courses/$courseId/tutor/conversations');
+    _throwIfError(res, fallback: 'Could not load your conversations');
+    final data = (res.data['data'] as List).cast<Map>();
+    return data.map((c) => TutorConversationSummary.fromJson(c.cast<String, dynamic>())).toList();
+  }
+
+  /// The full transcript of one conversation, to resume it.
+  Future<List<TutorMessage>> tutorConversationMessages(String conversationId) async {
+    final res = await _dio.get('/me/tutor/conversations/$conversationId');
+    _throwIfError(res, fallback: 'Could not open the conversation');
+    final messages = (res.data['data']['messages'] as List?) ?? const [];
+    return messages.map((m) => TutorMessage.fromJson((m as Map).cast<String, dynamic>())).toList();
+  }
+
   /// Ask the tutor a question and get its reply.
-  Future<TutorMessage> sendTutorMessage(
-    String conversationId,
-    String content, {
-    String? focusNodeId,
-  }) async {
-    final res = await _dio.post('/me/tutor/conversations/$conversationId/messages', data: {
-      'content': content,
-      'focus_node_id': ?focusNodeId,
-    });
+  Future<TutorMessage> sendTutorMessage(String conversationId, String content, {String? focusNodeId}) async {
+    final res = await _dio.post(
+      '/me/tutor/conversations/$conversationId/messages',
+      data: {'content': content, 'focus_node_id': ?focusNodeId},
+    );
     _throwIfError(res, fallback: 'The tutor could not reply');
     return TutorMessage.fromJson((res.data['data'] as Map).cast<String, dynamic>());
   }
 
   /// Ask the tutor and stream the reply as it is written. Yields a [TutorDelta]
   /// per token, then a final [TutorDone] carrying the citations.
-  Stream<TutorEvent> streamTutorMessage(
-    String conversationId,
-    String content, {
-    String? focusNodeId,
-  }) async* {
+  Stream<TutorEvent> streamTutorMessage(String conversationId, String content, {String? focusNodeId}) async* {
     final res = await _dio.post<ResponseBody>(
       '/me/tutor/conversations/$conversationId/stream',
       data: {'content': content, 'focus_node_id': ?focusNodeId},
@@ -255,10 +286,10 @@ class ApiClient {
   }
 
   Future<void> answer(String attemptId, String assessmentQuestionId, Map<String, dynamic> response) async {
-    final res = await _dio.post('/me/attempts/$attemptId/answers', data: {
-      'assessment_question_id': assessmentQuestionId,
-      'response': response,
-    });
+    final res = await _dio.post(
+      '/me/attempts/$attemptId/answers',
+      data: {'assessment_question_id': assessmentQuestionId, 'response': response},
+    );
     _throwIfError(res, fallback: 'Could not save your answer');
   }
 

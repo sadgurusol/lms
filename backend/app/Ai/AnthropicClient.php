@@ -69,6 +69,57 @@ class AnthropicClient
     }
 
     /**
+     * A single-shot completion whose user message may carry rich content blocks
+     * (e.g. a PDF document alongside instructions), for course generation. Longer
+     * timeout and a bigger token ceiling than a chat turn.
+     *
+     * @param  list<array<string, mixed>>  $content  Anthropic content blocks.
+     */
+    public function complete(string $system, array $content, int $maxTokens = 8000): AiReply
+    {
+        $key = (string) config('services.anthropic.key');
+
+        if ($key === '') {
+            throw new RuntimeException('AI is not configured (missing ANTHROPIC_API_KEY).');
+        }
+
+        $response = Http::withHeaders([
+            'x-api-key' => $key,
+            'anthropic-version' => self::API_VERSION,
+        ])
+            ->timeout(300)
+            ->post(self::ENDPOINT, [
+                'model' => (string) config('services.anthropic.model'),
+                'max_tokens' => $maxTokens,
+                'system' => $system,
+                'messages' => [['role' => 'user', 'content' => $content]],
+            ]);
+
+        if ($response->failed()) {
+            throw new RuntimeException("The AI service failed (status {$response->status()}).");
+        }
+
+        /** @var list<array{type?: string, text?: string}> $blocks */
+        $blocks = $response->json('content', []);
+        $text = '';
+        foreach ($blocks as $block) {
+            if (($block['type'] ?? '') === 'text') {
+                $text .= $block['text'] ?? '';
+            }
+        }
+
+        if ($text === '') {
+            throw new RuntimeException('The AI returned an empty response.');
+        }
+
+        return new AiReply(
+            text: $text,
+            inputTokens: (int) $response->json('usage.input_tokens', 0),
+            outputTokens: (int) $response->json('usage.output_tokens', 0),
+        );
+    }
+
+    /**
      * Stream a reply, invoking $onText with each text delta as it arrives.
      * Returns the assembled reply once the stream ends.
      *

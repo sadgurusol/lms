@@ -2,14 +2,7 @@
 // server owns all the logic; the app renders what it is given.
 
 class CourseSummary {
-  CourseSummary({
-    required this.id,
-    required this.title,
-    this.code,
-    this.subject,
-    this.gradeBand,
-    this.publicationId,
-  });
+  CourseSummary({required this.id, required this.title, this.code, this.subject, this.gradeBand, this.publicationId});
 
   final String id;
   final String title;
@@ -19,13 +12,13 @@ class CourseSummary {
   final String? publicationId;
 
   factory CourseSummary.fromJson(Map<String, dynamic> json) => CourseSummary(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        code: json['code'] as String?,
-        subject: json['subject'] as String?,
-        gradeBand: json['grade_band'] as String?,
-        publicationId: json['publication_id'] as String?,
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    code: json['code'] as String?,
+    subject: json['subject'] as String?,
+    gradeBand: json['grade_band'] as String?,
+    publicationId: json['publication_id'] as String?,
+  );
 }
 
 /// One block of content on a node: rich text, callout, embed, etc.
@@ -37,10 +30,10 @@ class Block {
   final Map<String, dynamic> payload;
 
   factory Block.fromJson(Map<String, dynamic> json) => Block(
-        id: json['id'] as String,
-        type: json['type'] as String,
-        payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
-      );
+    id: json['id'] as String,
+    type: json['type'] as String,
+    payload: (json['payload'] as Map?)?.cast<String, dynamic>() ?? const {},
+  );
 }
 
 /// A node in the published course tree, with its numbering baked in.
@@ -62,17 +55,17 @@ class ContentNode {
   final List<ContentNode> children;
 
   factory ContentNode.fromJson(Map<String, dynamic> json) => ContentNode(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        label: (json['label'] as String?) ?? json['title'] as String,
-        summary: json['summary'] as String?,
-        blocks: ((json['blocks'] as List?) ?? const [])
-            .map((b) => Block.fromJson((b as Map).cast<String, dynamic>()))
-            .toList(),
-        children: ((json['children'] as List?) ?? const [])
-            .map((c) => ContentNode.fromJson((c as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    label: (json['label'] as String?) ?? json['title'] as String,
+    summary: json['summary'] as String?,
+    blocks: ((json['blocks'] as List?) ?? const [])
+        .map((b) => Block.fromJson((b as Map).cast<String, dynamic>()))
+        .toList(),
+    children: ((json['children'] as List?) ?? const [])
+        .map((c) => ContentNode.fromJson((c as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 /// Flatten a Portable Text document to plain paragraphs. Question stems are
@@ -98,14 +91,14 @@ class DashboardData {
   final List<RecentQuiz> recentQuizzes;
 
   factory DashboardData.fromJson(Map<String, dynamic> json) => DashboardData(
-        stats: DashboardStats.fromJson((json['stats'] as Map).cast<String, dynamic>()),
-        courses: ((json['courses'] as List?) ?? const [])
-            .map((c) => CourseProgress.fromJson((c as Map).cast<String, dynamic>()))
-            .toList(),
-        recentQuizzes: ((json['recent_quizzes'] as List?) ?? const [])
-            .map((q) => RecentQuiz.fromJson((q as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+    stats: DashboardStats.fromJson((json['stats'] as Map).cast<String, dynamic>()),
+    courses: ((json['courses'] as List?) ?? const [])
+        .map((c) => CourseProgress.fromJson((c as Map).cast<String, dynamic>()))
+        .toList(),
+    recentQuizzes: ((json['recent_quizzes'] as List?) ?? const [])
+        .map((q) => RecentQuiz.fromJson((q as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 class DashboardStats {
@@ -126,13 +119,13 @@ class DashboardStats {
   final double? averageQuizPercentage;
 
   factory DashboardStats.fromJson(Map<String, dynamic> json) => DashboardStats(
-        coursesEnrolled: (json['courses_enrolled'] as num?)?.toInt() ?? 0,
-        coursesCompleted: (json['courses_completed'] as num?)?.toInt() ?? 0,
-        minutesSpent: (json['minutes_spent'] as num?)?.toInt() ?? 0,
-        quizzesTaken: (json['quizzes_taken'] as num?)?.toInt() ?? 0,
-        quizzesPassed: (json['quizzes_passed'] as num?)?.toInt() ?? 0,
-        averageQuizPercentage: (json['average_quiz_percentage'] as num?)?.toDouble(),
-      );
+    coursesEnrolled: (json['courses_enrolled'] as num?)?.toInt() ?? 0,
+    coursesCompleted: (json['courses_completed'] as num?)?.toInt() ?? 0,
+    minutesSpent: (json['minutes_spent'] as num?)?.toInt() ?? 0,
+    quizzesTaken: (json['quizzes_taken'] as num?)?.toInt() ?? 0,
+    quizzesPassed: (json['quizzes_passed'] as num?)?.toInt() ?? 0,
+    averageQuizPercentage: (json['average_quiz_percentage'] as num?)?.toDouble(),
+  );
 }
 
 class CourseProgress {
@@ -153,13 +146,13 @@ class CourseProgress {
   final int totalNodes;
 
   factory CourseProgress.fromJson(Map<String, dynamic> json) => CourseProgress(
-        id: json['id'] as String,
-        title: json['title'] as String,
-        subject: json['subject'] as String?,
-        percent: (json['percent'] as num?)?.toDouble() ?? 0,
-        completedNodes: (json['completed_nodes'] as num?)?.toInt() ?? 0,
-        totalNodes: (json['total_nodes'] as num?)?.toInt() ?? 0,
-      );
+    id: json['id'] as String,
+    title: json['title'] as String,
+    subject: json['subject'] as String?,
+    percent: (json['percent'] as num?)?.toDouble() ?? 0,
+    completedNodes: (json['completed_nodes'] as num?)?.toInt() ?? 0,
+    totalNodes: (json['total_nodes'] as num?)?.toInt() ?? 0,
+  );
 }
 
 class RecentQuiz {
@@ -170,10 +163,10 @@ class RecentQuiz {
   final bool? passed;
 
   factory RecentQuiz.fromJson(Map<String, dynamic> json) => RecentQuiz(
-        title: json['assessment_title'] as String? ?? 'Quiz',
-        percentage: (json['percentage'] as num?)?.toDouble() ?? 0,
-        passed: json['passed'] as bool?,
-      );
+    title: json['assessment_title'] as String? ?? 'Quiz',
+    percentage: (json['percentage'] as num?)?.toDouble() ?? 0,
+    passed: json['passed'] as bool?,
+  );
 }
 
 /// One assessment on a course, plus what this learner has done with it.
@@ -231,10 +224,10 @@ class AttemptOption {
   final bool? isCorrect; // present only once answers are revealed
 
   factory AttemptOption.fromJson(Map<String, dynamic> json) => AttemptOption(
-        id: json['id'] as String,
-        text: ((json['body'] as Map?)?['text'] as String?) ?? '',
-        isCorrect: json['is_correct'] as bool?,
-      );
+    id: json['id'] as String,
+    text: ((json['body'] as Map?)?['text'] as String?) ?? '',
+    isCorrect: json['is_correct'] as bool?,
+  );
 }
 
 class AttemptQuestion {
@@ -302,18 +295,18 @@ class Attempt {
   bool get isInProgress => state == 'in_progress';
 
   factory Attempt.fromJson(Map<String, dynamic> json) => Attempt(
-        id: json['id'] as String,
-        state: json['state'] as String,
-        answersRevealed: json['answers_revealed'] as bool? ?? false,
-        score: (json['score'] as num?)?.toDouble(),
-        maxScore: (json['max_score'] as num?)?.toDouble(),
-        passed: json['passed'] as bool?,
-        expiresAt: json['expires_at'] != null ? DateTime.tryParse(json['expires_at'] as String) : null,
-        allowBacktrack: json['allow_backtrack'] as bool? ?? true,
-        questions: ((json['questions'] as List?) ?? const [])
-            .map((q) => AttemptQuestion.fromJson((q as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+    id: json['id'] as String,
+    state: json['state'] as String,
+    answersRevealed: json['answers_revealed'] as bool? ?? false,
+    score: (json['score'] as num?)?.toDouble(),
+    maxScore: (json['max_score'] as num?)?.toDouble(),
+    passed: json['passed'] as bool?,
+    expiresAt: json['expires_at'] != null ? DateTime.tryParse(json['expires_at'] as String) : null,
+    allowBacktrack: json['allow_backtrack'] as bool? ?? true,
+    questions: ((json['questions'] as List?) ?? const [])
+        .map((q) => AttemptQuestion.fromJson((q as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 /// A purchasable product in the storefront: the courses it unlocks and its
@@ -334,16 +327,16 @@ class CatalogProduct {
   final List<CatalogPlan> plans;
 
   factory CatalogProduct.fromJson(Map<String, dynamic> json) => CatalogProduct(
-        productId: json['product_id'] as String,
-        name: json['name'] as String,
-        owned: json['owned'] as bool? ?? false,
-        courses: ((json['courses'] as List?) ?? const [])
-            .map((c) => CourseSummary.fromJson((c as Map).cast<String, dynamic>()))
-            .toList(),
-        plans: ((json['plans'] as List?) ?? const [])
-            .map((p) => CatalogPlan.fromJson((p as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+    productId: json['product_id'] as String,
+    name: json['name'] as String,
+    owned: json['owned'] as bool? ?? false,
+    courses: ((json['courses'] as List?) ?? const [])
+        .map((c) => CourseSummary.fromJson((c as Map).cast<String, dynamic>()))
+        .toList(),
+    plans: ((json['plans'] as List?) ?? const [])
+        .map((p) => CatalogPlan.fromJson((p as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 /// One price option: a subscription interval or a one-time purchase.
@@ -375,23 +368,38 @@ class CatalogPlan {
   }
 
   String get intervalLabel => switch (interval) {
-        'month' => '/mo',
-        'year' => '/yr',
-        _ => '',
-      };
+    'month' => '/mo',
+    'year' => '/yr',
+    _ => '',
+  };
 
   factory CatalogPlan.fromJson(Map<String, dynamic> json) => CatalogPlan(
-        code: json['code'] as String,
-        name: json['name'] as String,
-        priceMinor: (json['price_minor'] as num?)?.toInt() ?? 0,
-        currency: json['currency'] as String? ?? 'INR',
-        interval: json['interval'] as String? ?? 'month',
-        trialDays: (json['trial_days'] as num?)?.toInt() ?? 0,
-        isSubscription: json['is_subscription'] as bool? ?? true,
-      );
+    code: json['code'] as String,
+    name: json['name'] as String,
+    priceMinor: (json['price_minor'] as num?)?.toInt() ?? 0,
+    currency: json['currency'] as String? ?? 'INR',
+    interval: json['interval'] as String? ?? 'month',
+    trialDays: (json['trial_days'] as num?)?.toInt() ?? 0,
+    isSubscription: json['is_subscription'] as bool? ?? true,
+  );
 }
 
 const _currencySymbols = {'INR': '₹', 'USD': '\$', 'EUR': '€', 'GBP': '£'};
+
+/// A past tutor conversation, for the history list.
+class TutorConversationSummary {
+  TutorConversationSummary({required this.id, this.title, this.createdAt});
+
+  final String id;
+  final String? title;
+  final DateTime? createdAt;
+
+  factory TutorConversationSummary.fromJson(Map<String, dynamic> json) => TutorConversationSummary(
+    id: json['id'] as String,
+    title: json['title'] as String?,
+    createdAt: json['created_at'] != null ? DateTime.tryParse(json['created_at'] as String) : null,
+  );
+}
 
 /// One turn in an AI-tutor conversation.
 class TutorMessage {
@@ -404,12 +412,12 @@ class TutorMessage {
   bool get isUser => role == 'user';
 
   factory TutorMessage.fromJson(Map<String, dynamic> json) => TutorMessage(
-        role: json['role'] as String,
-        content: json['content'] as String,
-        citations: ((json['citations'] as List?) ?? const [])
-            .map((c) => TutorCitation.fromJson((c as Map).cast<String, dynamic>()))
-            .toList(),
-      );
+    role: json['role'] as String,
+    content: json['content'] as String,
+    citations: ((json['citations'] as List?) ?? const [])
+        .map((c) => TutorCitation.fromJson((c as Map).cast<String, dynamic>()))
+        .toList(),
+  );
 }
 
 /// An event from the tutor's streamed reply.

@@ -3,14 +3,18 @@ import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../responsive.dart';
 
 /// A chat with the AI tutor for one course. The tutor answers from the course's
 /// own material and cites the sections it draws on.
 class TutorScreen extends StatefulWidget {
-  const TutorScreen({super.key, required this.courseId, required this.title});
+  const TutorScreen({super.key, required this.courseId, required this.title, this.conversationId});
 
   final String courseId;
   final String title;
+
+  /// When set, resume this existing conversation; otherwise start a new one.
+  final String? conversationId;
 
   @override
   State<TutorScreen> createState() => _TutorScreenState();
@@ -45,9 +49,22 @@ class _TutorScreenState extends State<TutorScreen> {
   }
 
   Future<void> _start() async {
+    final api = context.read<ApiClient>();
     try {
-      final id = await context.read<ApiClient>().startTutorConversation(widget.courseId);
-      if (mounted) setState(() => _conversationId = id);
+      if (widget.conversationId != null) {
+        // Resume: load the transcript into the view.
+        final history = await api.tutorConversationMessages(widget.conversationId!);
+        if (mounted) {
+          setState(() {
+            _conversationId = widget.conversationId;
+            _messages.addAll(history);
+          });
+          _scrollToEnd();
+        }
+      } else {
+        final id = await api.startTutorConversation(widget.courseId);
+        if (mounted) setState(() => _conversationId = id);
+      }
     } on ApiException catch (e) {
       if (mounted) setState(() => _error = e.message);
     } finally {
@@ -81,16 +98,17 @@ class _TutorScreenState extends State<TutorScreen> {
         }
       }
       if (mounted && (_partial ?? '').isNotEmpty) {
-        setState(() => _messages.add(
-              TutorMessage(role: 'assistant', content: _partial!, citations: _partialCitations),
-            ));
+        setState(
+          () => _messages.add(TutorMessage(role: 'assistant', content: _partial!, citations: _partialCitations)),
+        );
       }
     } on ApiException catch (e) {
       if (mounted) {
-        setState(() => _messages.add(TutorMessage(
-              role: 'assistant',
-              content: "Sorry — I couldn't answer that just now. ${e.message}",
-            )));
+        setState(
+          () => _messages.add(
+            TutorMessage(role: 'assistant', content: "Sorry — I couldn't answer that just now. ${e.message}"),
+          ),
+        );
       }
     } finally {
       if (mounted) {
@@ -107,8 +125,11 @@ class _TutorScreenState extends State<TutorScreen> {
   void _scrollToEnd() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_scroll.hasClients) {
-        _scroll.animateTo(_scroll.position.maxScrollExtent,
-            duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+        _scroll.animateTo(
+          _scroll.position.maxScrollExtent,
+          duration: const Duration(milliseconds: 250),
+          curve: Curves.easeOut,
+        );
       }
     });
   }
@@ -122,21 +143,25 @@ class _TutorScreenState extends State<TutorScreen> {
           preferredSize: const Size.fromHeight(20),
           child: Padding(
             padding: const EdgeInsets.only(bottom: 8),
-            child: Text(widget.title,
-                style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
+            child: Text(widget.title, style: TextStyle(fontSize: 12, color: Theme.of(context).hintColor)),
           ),
         ),
       ),
       body: _error != null
-          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+          ? Center(
+              child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)),
+            )
           : _starting
-              ? const Center(child: CircularProgressIndicator())
-              : Column(
-                  children: [
-                    Expanded(child: _transcript()),
-                    _composer(),
-                  ],
-                ),
+          ? const Center(child: CircularProgressIndicator())
+          : MaxWidth(
+              maxWidth: 760,
+              child: Column(
+                children: [
+                  Expanded(child: _transcript()),
+                  _composer(),
+                ],
+              ),
+            ),
     );
   }
 
@@ -178,22 +203,17 @@ class _TutorScreenState extends State<TutorScreen> {
                 maxLines: 4,
                 textInputAction: TextInputAction.send,
                 onSubmitted: (_) => _send(),
+                style: const TextStyle(fontSize: 16),
                 decoration: InputDecoration(
                   hintText: 'Ask about this course…',
                   filled: true,
-                  border: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(24),
-                    borderSide: BorderSide.none,
-                  ),
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(24), borderSide: BorderSide.none),
                   contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
                 ),
               ),
             ),
             const SizedBox(width: 8),
-            IconButton.filled(
-              onPressed: _sending ? null : _send,
-              icon: const Icon(Icons.send_rounded),
-            ),
+            IconButton.filled(onPressed: _sending ? null : _send, icon: const Icon(Icons.send_rounded)),
           ],
         ),
       ),
@@ -216,16 +236,18 @@ class _Welcome extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(children: [
-            Icon(Icons.auto_awesome, size: 18, color: Theme.of(context).colorScheme.primary),
-            const SizedBox(width: 6),
-            const Text('Your study tutor', style: TextStyle(fontWeight: FontWeight.w700)),
-          ]),
+          Row(
+            children: [
+              Icon(Icons.auto_awesome, size: 20, color: Theme.of(context).colorScheme.primary),
+              const SizedBox(width: 6),
+              const Text('Your study tutor', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+            ],
+          ),
           const SizedBox(height: 6),
           Text(
             'Ask me to explain a topic, give another example, or check your understanding. '
             "I teach from this course's material — I won't hand over quiz answers.",
-            style: TextStyle(color: Theme.of(context).hintColor, height: 1.35),
+            style: TextStyle(color: Theme.of(context).hintColor, fontSize: 14.5, height: 1.45),
           ),
         ],
       ),
@@ -263,10 +285,7 @@ class _MessageBubble extends StatelessWidget {
           children: [
             Text(
               message.content,
-              style: TextStyle(
-                color: isUser ? scheme.onPrimary : scheme.onSurface,
-                height: 1.4,
-              ),
+              style: TextStyle(color: isUser ? scheme.onPrimary : scheme.onSurface, fontSize: 16, height: 1.5),
             ),
             if (message.citations.isNotEmpty) ...[
               const SizedBox(height: 8),
@@ -276,7 +295,7 @@ class _MessageBubble extends StatelessWidget {
                 children: [
                   for (final c in message.citations)
                     Chip(
-                      label: Text(c.label, style: const TextStyle(fontSize: 11)),
+                      label: Text(c.label, style: const TextStyle(fontSize: 12)),
                       visualDensity: VisualDensity.compact,
                       materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       padding: EdgeInsets.zero,
@@ -306,11 +325,7 @@ class _TypingBubble extends StatelessWidget {
           color: Theme.of(context).colorScheme.surfaceContainerHighest,
           borderRadius: BorderRadius.circular(16),
         ),
-        child: const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2),
-        ),
+        child: const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
       ),
     );
   }

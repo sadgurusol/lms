@@ -4,6 +4,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../responsive.dart';
 
 /// The storefront: browse products and open a checkout. Payment happens in the
 /// browser; access arrives via the payment webhook, so the learner pulls to
@@ -34,9 +35,9 @@ class _StoreScreenState extends State<StoreScreen> {
       final url = await context.read<ApiClient>().startCheckout(plan);
       final launched = await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       if (!launched) throw ApiException('Could not open the checkout page.');
-      messenger.showSnackBar(const SnackBar(
-        content: Text('Finish paying in your browser, then pull down to refresh.'),
-      ));
+      messenger.showSnackBar(
+        const SnackBar(content: Text('Finish paying in your browser, then pull down to refresh.')),
+      );
     } on ApiException catch (e) {
       messenger.showSnackBar(SnackBar(content: Text(e.message)));
     } catch (_) {
@@ -59,22 +60,24 @@ class _StoreScreenState extends State<StoreScreen> {
               return const Center(child: CircularProgressIndicator());
             }
             if (snapshot.hasError) {
-              return _CenteredScroll(child: Text(
-                snapshot.error is ApiException ? (snapshot.error as ApiException).message : 'Something went wrong.',
-              ));
+              return _CenteredScroll(
+                child: Text(
+                  snapshot.error is ApiException ? (snapshot.error as ApiException).message : 'Something went wrong.',
+                ),
+              );
             }
             final products = snapshot.data ?? const [];
             if (products.isEmpty) {
               return const _CenteredScroll(child: Text('Nothing is on sale right now.'));
             }
-            return ListView.separated(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
-              itemCount: products.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 14),
-              itemBuilder: (context, i) => _ProductCard(
-                product: products[i],
-                busyPlan: _busyPlan,
-                onCheckout: _checkout,
+            return MaxWidth(
+              maxWidth: 720,
+              child: ListView.separated(
+                padding: const EdgeInsets.fromLTRB(16, 12, 16, 24),
+                itemCount: products.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 14),
+                itemBuilder: (context, i) =>
+                    _ProductCard(product: products[i], busyPlan: _busyPlan, onCheckout: _checkout),
               ),
             );
           },
@@ -103,9 +106,7 @@ class _ProductCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                Expanded(
-                  child: Text(product.name, style: Theme.of(context).textTheme.titleMedium),
-                ),
+                Expanded(child: Text(product.name, style: Theme.of(context).textTheme.titleMedium)),
                 if (product.owned)
                   Chip(
                     label: const Text('Owned'),
@@ -133,8 +134,10 @@ class _ProductCard extends StatelessWidget {
             ],
             const SizedBox(height: 12),
             if (product.owned)
-              Text('You have access to this.',
-                  style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600))
+              Text(
+                'You have access to this.',
+                style: TextStyle(color: scheme.primary, fontWeight: FontWeight.w600),
+              )
             else
               Wrap(
                 spacing: 8,
@@ -172,7 +175,9 @@ class _CenteredScroll extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 140),
-        Center(child: Padding(padding: const EdgeInsets.all(24), child: child)),
+        Center(
+          child: Padding(padding: const EdgeInsets.all(24), child: child),
+        ),
       ],
     );
   }

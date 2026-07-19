@@ -79,7 +79,8 @@ Route::post('/v1/webhooks/mux', [MediaWebhookController::class, 'mux']);
 Route::post('/v1/launch', [LaunchController::class, 'launch'])->middleware('throttle:launch');
 Route::post('/v1/auth/launch/exchange', [LaunchController::class, 'exchange'])->middleware('throttle:launch');
 
-// B2C direct login for the learner app. Rate-limited like the studio login.
+// B2C direct sign-up and login for the learner app.
+Route::post('/v1/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('/v1/auth/token', [AuthController::class, 'token'])->middleware('throttle:login');
 Route::post('/v1/auth/logout', [AuthController::class, 'logout'])->middleware('auth:sanctum');
 

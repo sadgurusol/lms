@@ -13,9 +13,11 @@ const NAV: NavItem[] = [
     { label: 'Dashboard', href: '/studio' },
     { label: 'Schemas', href: '/studio/schemas', permission: 'schema.view' },
     { label: 'Courses', href: '/studio/courses', permission: 'course.view.granted' },
+    { label: 'Generate', href: '/studio/generate', permission: 'course.create' },
     { label: 'Question bank', href: '/studio/questions', permission: 'question.manage' },
     { label: 'Clients', href: '/ops/clients', permission: 'client.view' },
     { label: 'Products', href: '/ops/products', permission: 'product.view' },
+    { label: 'Learners', href: '/studio/learners', permission: 'learner.manage' },
     { label: 'Staff', href: '/studio/users', permission: 'user.manage' },
 ];
 

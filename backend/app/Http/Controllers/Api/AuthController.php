@@ -2,11 +2,15 @@
 
 namespace App\Http\Controllers\Api;
 
+use App\Authorization\Roles;
 use App\Http\Controllers\Controller;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\Rules\Password;
 use Illuminate\Validation\ValidationException;
 
 /**
@@ -44,11 +48,43 @@ class AuthController extends Controller
             ]);
         }
 
-        $token = $user->createToken(
-            $credentials['device_name'] ?? 'learner-app',
-            ['*'],
-            now()->addDays(self::TOKEN_TTL_DAYS),
-        );
+        return $this->issueToken($user, $credentials['device_name'] ?? 'learner-app');
+    }
+
+    /**
+     * Direct B2C sign-up: create a learner account and return a token, so the
+     * app moves straight into the signed-in experience. No entitlement is
+     * granted here — a new learner sees the storefront until they buy or are
+     * comped.
+     */
+    public function register(Request $request): JsonResponse
+    {
+        $data = $request->validate([
+            'name' => ['required', 'string', 'max:120'],
+            'email' => ['required', 'email', 'max:200', Rule::unique('users', 'email')],
+            'password' => ['required', 'confirmed', Password::defaults()],
+            'device_name' => ['nullable', 'string', 'max:120'],
+        ]);
+
+        $user = DB::transaction(function () use ($data) {
+            $user = User::create([
+                'name' => $data['name'],
+                'email' => $data['email'],
+                'password' => $data['password'],       // hashed by the model cast
+                'status' => User::STATUS_ACTIVE,
+                'kind' => User::KIND_LOCAL,
+            ]);
+            $user->assignRole(Roles::LEARNER);
+
+            return $user;
+        });
+
+        return $this->issueToken($user, $data['device_name'] ?? 'learner-app');
+    }
+
+    private function issueToken(User $user, string $deviceName): JsonResponse
+    {
+        $token = $user->createToken($deviceName, ['*'], now()->addDays(self::TOKEN_TTL_DAYS));
 
         $user->forceFill(['last_seen_at' => now()])->save();
 

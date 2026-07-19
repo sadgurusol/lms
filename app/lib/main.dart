@@ -14,7 +14,9 @@ import 'screens/course_screen.dart';
 import 'screens/home_shell.dart';
 import 'screens/launch_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/signup_screen.dart';
 import 'screens/store_screen.dart';
+import 'screens/tutor_conversations_screen.dart';
 import 'screens/tutor_screen.dart';
 
 void main() {
@@ -67,52 +69,59 @@ class _LearnerAppState extends State<LearnerApp> {
   }
 
   GoRouter _buildRouter(AuthState auth) => GoRouter(
-        // The router listens to auth so a login (or logout) moves the user.
-        refreshListenable: auth,
-        redirect: (context, state) {
-          if (!auth.ready) return null; // splash until the saved token is checked
-          final loc = state.matchedLocation;
-          // A launch link is a public entry point — never bounce it to /login.
-          if (loc.startsWith('/l/')) return null;
-          if (!auth.signedIn) return loc == '/login' ? null : '/login';
-          if (loc == '/login') return '/';
-          return null;
-        },
-        routes: [
-          GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
-          GoRoute(path: '/', builder: (_, _) => const HomeShell()),
-          GoRoute(path: '/store', builder: (_, _) => const StoreScreen()),
-          GoRoute(
-            path: '/l/:ticket',
-            builder: (_, state) => LaunchScreen(ticket: state.pathParameters['ticket']!),
-          ),
-          GoRoute(
-            path: '/courses/:id',
-            builder: (_, state) => CourseScreen(
-              courseId: state.pathParameters['id']!,
-              title: state.uri.queryParameters['title'] ?? 'Course',
-            ),
-          ),
-          GoRoute(
-            path: '/courses/:id/quizzes',
-            builder: (_, state) => AssessmentsScreen(
-              courseId: state.pathParameters['id']!,
-              title: state.uri.queryParameters['title'] ?? 'Course',
-            ),
-          ),
-          GoRoute(
-            path: '/courses/:id/tutor',
-            builder: (_, state) => TutorScreen(
-              courseId: state.pathParameters['id']!,
-              title: state.uri.queryParameters['title'] ?? 'Course',
-            ),
-          ),
-          GoRoute(
-            path: '/attempts/:id',
-            builder: (_, state) => AttemptScreen(attemptId: state.pathParameters['id']!),
-          ),
-        ],
-      );
+    // The router listens to auth so a login (or logout) moves the user.
+    refreshListenable: auth,
+    redirect: (context, state) {
+      if (!auth.ready) return null; // splash until the saved token is checked
+      final loc = state.matchedLocation;
+      // A launch link is a public entry point — never bounce it to /login.
+      if (loc.startsWith('/l/')) return null;
+      if (!auth.signedIn) return (loc == '/login' || loc == '/signup') ? null : '/login';
+      if (loc == '/login' || loc == '/signup') return '/';
+      return null;
+    },
+    routes: [
+      GoRoute(path: '/login', builder: (_, _) => const LoginScreen()),
+      GoRoute(path: '/signup', builder: (_, _) => const SignupScreen()),
+      GoRoute(path: '/', builder: (_, _) => const HomeShell()),
+      GoRoute(path: '/store', builder: (_, _) => const StoreScreen()),
+      GoRoute(
+        path: '/l/:ticket',
+        builder: (_, state) => LaunchScreen(ticket: state.pathParameters['ticket']!),
+      ),
+      GoRoute(
+        path: '/courses/:id',
+        builder: (_, state) =>
+            CourseScreen(courseId: state.pathParameters['id']!, title: state.uri.queryParameters['title'] ?? 'Course'),
+      ),
+      GoRoute(
+        path: '/courses/:id/quizzes',
+        builder: (_, state) => AssessmentsScreen(
+          courseId: state.pathParameters['id']!,
+          title: state.uri.queryParameters['title'] ?? 'Course',
+        ),
+      ),
+      GoRoute(
+        path: '/courses/:id/tutor',
+        builder: (_, state) => TutorConversationsScreen(
+          courseId: state.pathParameters['id']!,
+          title: state.uri.queryParameters['title'] ?? 'Course',
+        ),
+      ),
+      GoRoute(
+        path: '/courses/:id/tutor/chat',
+        builder: (_, state) => TutorScreen(
+          courseId: state.pathParameters['id']!,
+          title: state.uri.queryParameters['title'] ?? 'Course',
+          conversationId: state.uri.queryParameters['conversation'],
+        ),
+      ),
+      GoRoute(
+        path: '/attempts/:id',
+        builder: (_, state) => AttemptScreen(attemptId: state.pathParameters['id']!),
+      ),
+    ],
+  );
 
   @override
   Widget build(BuildContext context) {

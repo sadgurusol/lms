@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../responsive.dart';
 
 class AttemptScreen extends StatefulWidget {
   const AttemptScreen({super.key, required this.attemptId});
@@ -123,13 +124,16 @@ class _AttemptScreenState extends State<AttemptScreen> {
             ),
         ],
       ),
-      body: _error != null
-          ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
-          : attempt == null
-              ? const Center(child: CircularProgressIndicator())
-              : attempt.isInProgress
-                  ? _buildForm(attempt)
-                  : _buildResult(attempt),
+      body: MaxWidth(
+        maxWidth: 760,
+        child: _error != null
+            ? Center(child: Padding(padding: const EdgeInsets.all(24), child: Text(_error!)))
+            : attempt == null
+                ? const Center(child: CircularProgressIndicator())
+                : attempt.isInProgress
+                    ? _buildForm(attempt)
+                    : _buildResult(attempt),
+      ),
     );
   }
 

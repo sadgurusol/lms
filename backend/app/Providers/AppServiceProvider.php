@@ -147,6 +147,12 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(5)->by($request->ip()),
             Limit::perHour(10)->by(mb_strtolower((string) $request->input('email')).'|'.$request->ip()),
         ]);
+
+        // Sign-up is per-IP: throttle bulk account creation.
+        RateLimiter::for('register', fn (Request $request) => [
+            Limit::perMinute(5)->by($request->ip()),
+            Limit::perDay(20)->by($request->ip()),
+        ]);
     }
 
     /** Per user when we know who they are, per IP when we do not. */

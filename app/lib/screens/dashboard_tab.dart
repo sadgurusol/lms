@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import '../api_client.dart';
 import '../auth.dart';
 import '../models.dart';
+import '../responsive.dart';
 import '../theme.dart';
 
 class DashboardTab extends StatefulWidget {
@@ -36,43 +37,88 @@ class _DashboardTabState extends State<DashboardTab> {
             return const Center(child: CircularProgressIndicator());
           }
           if (snapshot.hasError) {
-            return ListView(children: [
-              const SizedBox(height: 140),
-              Center(
-                child: Text(snapshot.error is ApiException
-                    ? (snapshot.error as ApiException).message
-                    : 'Could not load your dashboard.'),
-              ),
-            ]);
-          }
-          final data = snapshot.data!;
-          return ListView(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-            children: [
-              _Hero(name: context.read<AuthState>().userName, stats: data.stats),
-              const SizedBox(height: 20),
-              _StatGrid(stats: data.stats),
-              const SizedBox(height: 24),
-              if (data.courses.isNotEmpty) ...[
-                _SectionHeader('Continue learning'),
-                const SizedBox(height: 8),
-                for (final c in data.courses) _CourseProgressCard(course: c),
-              ],
-              if (data.recentQuizzes.isNotEmpty) ...[
-                const SizedBox(height: 24),
-                _SectionHeader('Recent quizzes'),
-                const SizedBox(height: 8),
-                _RecentQuizzes(quizzes: data.recentQuizzes),
-              ],
-              if (data.courses.isEmpty && data.recentQuizzes.isEmpty)
-                Padding(
-                  padding: const EdgeInsets.only(top: 60),
-                  child: Center(
-                    child: Text('Nothing here yet — enrol in a course to get started.',
-                        style: TextStyle(color: Theme.of(context).hintColor)),
+            return ListView(
+              children: [
+                const SizedBox(height: 140),
+                Center(
+                  child: Text(
+                    snapshot.error is ApiException
+                        ? (snapshot.error as ApiException).message
+                        : 'Could not load your dashboard.',
                   ),
                 ),
-            ],
+              ],
+            );
+          }
+          final data = snapshot.data!;
+          final isTablet = context.isTablet;
+
+          final continueLearning = data.courses.isEmpty
+              ? null
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionHeader('Continue learning'),
+                    const SizedBox(height: 8),
+                    for (final c in data.courses) _CourseProgressCard(course: c),
+                  ],
+                );
+          final recentQuizzes = data.recentQuizzes.isEmpty
+              ? null
+              : Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _SectionHeader('Recent quizzes'),
+                    const SizedBox(height: 8),
+                    _RecentQuizzes(quizzes: data.recentQuizzes),
+                  ],
+                );
+
+          // On a tablet the two sections sit side by side; on a phone they stack.
+          Widget sections;
+          if (isTablet && continueLearning != null && recentQuizzes != null) {
+            sections = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: continueLearning),
+                const SizedBox(width: 20),
+                Expanded(child: recentQuizzes),
+              ],
+            );
+          } else {
+            sections = Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                ?continueLearning,
+                if (continueLearning != null && recentQuizzes != null) const SizedBox(height: 24),
+                ?recentQuizzes,
+              ],
+            );
+          }
+
+          return MaxWidth(
+            maxWidth: 1040,
+            child: ListView(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              children: [
+                _Hero(name: context.read<AuthState>().userName, stats: data.stats),
+                const SizedBox(height: 20),
+                _StatGrid(stats: data.stats, crossAxisCount: isTablet ? 4 : 2),
+                const SizedBox(height: 24),
+                if (continueLearning != null || recentQuizzes != null)
+                  sections
+                else
+                  Padding(
+                    padding: const EdgeInsets.only(top: 60),
+                    child: Center(
+                      child: Text(
+                        'Nothing here yet — enrol in a course to get started.',
+                        style: TextStyle(color: Theme.of(context).hintColor),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
           );
         },
       ),
@@ -89,27 +135,31 @@ class _Hero extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    final overall = stats.coursesEnrolled == 0
-        ? 0.0
-        : stats.coursesCompleted / stats.coursesEnrolled;
+    final overall = stats.coursesEnrolled == 0 ? 0.0 : stats.coursesCompleted / stats.coursesEnrolled;
 
     return Container(
       padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: AppTheme.heroGradient(scheme),
-        borderRadius: BorderRadius.circular(22),
-      ),
+      decoration: BoxDecoration(gradient: AppTheme.heroGradient(scheme), borderRadius: BorderRadius.circular(22)),
       child: Row(
         children: [
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Welcome back${name != null ? ',' : ''}',
-                    style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14)),
+                Text(
+                  'Welcome back${name != null ? ',' : ''}',
+                  style: TextStyle(color: Colors.white.withValues(alpha: 0.85), fontSize: 14),
+                ),
                 if (name != null)
-                  Text(name!,
-                      style: const TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.w800, letterSpacing: -0.5)),
+                  Text(
+                    name!,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      letterSpacing: -0.5,
+                    ),
+                  ),
                 const SizedBox(height: 10),
                 Text(
                   stats.coursesEnrolled == 0
@@ -151,8 +201,10 @@ class _Ring extends StatelessWidget {
               valueColor: AlwaysStoppedAnimation(color),
             ),
           ),
-          Text('${(value * 100).round()}%',
-              style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 15)),
+          Text(
+            '${(value * 100).round()}%',
+            style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 15),
+          ),
         ],
       ),
     );
@@ -160,9 +212,10 @@ class _Ring extends StatelessWidget {
 }
 
 class _StatGrid extends StatelessWidget {
-  const _StatGrid({required this.stats});
+  const _StatGrid({required this.stats, this.crossAxisCount = 2});
 
   final DashboardStats stats;
+  final int crossAxisCount;
 
   @override
   Widget build(BuildContext context) {
@@ -171,19 +224,15 @@ class _StatGrid extends StatelessWidget {
       _StatTile(icon: Icons.school_rounded, label: 'Courses', value: '${stats.coursesEnrolled}'),
       _StatTile(icon: Icons.schedule_rounded, label: 'Minutes', value: '${stats.minutesSpent}'),
       _StatTile(icon: Icons.quiz_rounded, label: 'Quizzes', value: '${stats.quizzesTaken}'),
-      _StatTile(
-        icon: Icons.trending_up_rounded,
-        label: 'Avg score',
-        value: avg == null ? '—' : '${avg.round()}%',
-      ),
+      _StatTile(icon: Icons.trending_up_rounded, label: 'Avg score', value: avg == null ? '—' : '${avg.round()}%'),
     ];
     return GridView.count(
-      crossAxisCount: 2,
+      crossAxisCount: crossAxisCount,
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
       mainAxisSpacing: 12,
       crossAxisSpacing: 12,
-      childAspectRatio: 2.4,
+      childAspectRatio: crossAxisCount >= 4 ? 2.0 : 2.4,
       children: tiles,
     );
   }
@@ -243,13 +292,17 @@ class _CourseProgressCard extends StatelessWidget {
                 Row(
                   children: [
                     Expanded(
-                      child: Text(course.title,
-                          style: Theme.of(context).textTheme.titleMedium,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis),
+                      child: Text(
+                        course.title,
+                        style: Theme.of(context).textTheme.titleMedium,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
                     ),
-                    Text('${course.percent.round()}%',
-                        style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary)),
+                    Text(
+                      '${course.percent.round()}%',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: scheme.primary),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 10),
@@ -262,8 +315,10 @@ class _CourseProgressCard extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 6),
-                Text('${course.completedNodes} of ${course.totalNodes} sections',
-                    style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12)),
+                Text(
+                  '${course.completedNodes} of ${course.totalNodes} sections',
+                  style: TextStyle(color: Theme.of(context).hintColor, fontSize: 12),
+                ),
               ],
             ),
           ),
@@ -298,14 +353,19 @@ class _RecentQuizzes extends StatelessWidget {
     return ListTile(
       leading: CircleAvatar(
         backgroundColor: color.withValues(alpha: 0.15),
-        child: Text('${q.percentage.round()}',
-            style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13)),
+        child: Text(
+          '${q.percentage.round()}',
+          style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 13),
+        ),
       ),
       title: Text(q.title, maxLines: 1, overflow: TextOverflow.ellipsis),
       trailing: q.passed == null
           ? null
-          : Icon(q.passed! ? Icons.check_circle : Icons.cancel,
-              color: q.passed! ? Colors.green : Colors.orange, size: 20),
+          : Icon(
+              q.passed! ? Icons.check_circle : Icons.cancel,
+              color: q.passed! ? Colors.green : Colors.orange,
+              size: 20,
+            ),
     );
   }
 }

@@ -13,6 +13,8 @@ use App\Http\Controllers\Studio\CourseInsightsController;
 use App\Http\Controllers\Studio\CourseNodeController;
 use App\Http\Controllers\Studio\CourseWorkflowController;
 use App\Http\Controllers\Studio\DashboardController;
+use App\Http\Controllers\Studio\GenerationController;
+use App\Http\Controllers\Studio\LearnerController;
 use App\Http\Controllers\Studio\MediaController;
 use App\Http\Controllers\Studio\QuestionBankController;
 use App\Http\Controllers\Studio\QuestionController;
@@ -54,6 +56,13 @@ Route::prefix('studio')->name('studio.')->group(function () {
         Route::patch('/users/{user}', [StaffController::class, 'update'])->name('users.update');
         Route::post('/users/{user}/invite', [StaffController::class, 'invite'])->name('users.invite');
 
+        // B2C learner administration (admin-only via learner.manage).
+        Route::get('/learners', [LearnerController::class, 'index'])->name('learners.index');
+        Route::get('/learners/{learner}', [LearnerController::class, 'show'])->name('learners.show');
+        Route::patch('/learners/{learner}/status', [LearnerController::class, 'updateStatus'])->name('learners.status');
+        Route::post('/learners/{learner}/comps', [LearnerController::class, 'grant'])->name('learners.comps.store');
+        Route::delete('/comps/{comp}', [LearnerController::class, 'revokeGrant'])->name('comps.destroy');
+
         Route::get('/schemas', [SchemaController::class, 'index'])->name('schemas.index');
         Route::post('/schemas', [SchemaController::class, 'store'])->name('schemas.store');
         Route::delete('/schemas/{schema}', [SchemaController::class, 'destroy'])->name('schemas.destroy');
@@ -64,6 +73,10 @@ Route::prefix('studio')->name('studio.')->group(function () {
             ->name('schema-versions.publish');
         Route::post('/schema-versions/{version}/clone', [SchemaVersionController::class, 'clone'])
             ->name('schema-versions.clone');
+
+        // AI course generation (from a PDF or a topic brief).
+        Route::get('/generate', [GenerationController::class, 'index'])->name('generate.index');
+        Route::post('/generate', [GenerationController::class, 'store'])->name('generate.store');
 
         Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
         Route::post('/courses', [CourseController::class, 'store'])->name('courses.store');

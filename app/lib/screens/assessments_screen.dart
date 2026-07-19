@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../responsive.dart';
 
 class AssessmentsScreen extends StatefulWidget {
   const AssessmentsScreen({super.key, required this.courseId, required this.title});
@@ -72,14 +73,17 @@ class _AssessmentsScreenState extends State<AssessmentsScreen> {
                 Center(child: Text('No quizzes on this course.')),
               ]);
             }
-            return ListView.separated(
-              padding: const EdgeInsets.all(12),
-              itemCount: items.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, i) => _AssessmentCard(
-                a: items[i],
-                busy: _starting == items[i].id,
-                onOpen: () => _open(items[i]),
+            return MaxWidth(
+              maxWidth: 720,
+              child: ListView.separated(
+                padding: const EdgeInsets.all(12),
+                itemCount: items.length,
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
+                itemBuilder: (context, i) => _AssessmentCard(
+                  a: items[i],
+                  busy: _starting == items[i].id,
+                  onOpen: () => _open(items[i]),
+                ),
               ),
             );
           },

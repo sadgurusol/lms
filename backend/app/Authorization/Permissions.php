@@ -83,6 +83,9 @@ final class Permissions
     // Users / staff
     public const USER_MANAGE = 'user.manage';
 
+    // B2C learners
+    public const LEARNER_MANAGE = 'learner.manage';
+
     // Media
     public const MEDIA_UPLOAD = 'media.upload';
 

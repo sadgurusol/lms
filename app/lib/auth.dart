@@ -35,6 +35,13 @@ class AuthState extends ChangeNotifier {
     notifyListeners();
   }
 
+  Future<void> register(String name, String email, String password) async {
+    final user = await api.register(name, email, password);
+    _userName = user['name'] as String?;
+    _signedIn = true;
+    notifyListeners();
+  }
+
   /// Complete a B2B launch: exchange the ticket, sign in, and return the course
   /// to open (if the launch deep-linked to one).
   Future<String?> completeLaunch(String ticket) async {

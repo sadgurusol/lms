@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import '../responsive.dart';
 
 /// The "Courses" tab — a card list of everything the learner is enrolled in.
 /// Body-only: the surrounding scaffold and nav live in HomeShell.
@@ -37,9 +38,9 @@ class _CoursesTabState extends State<CoursesTab> {
           }
           if (snapshot.hasError) {
             return _CenteredScroll(
-              child: Text(snapshot.error is ApiException
-                  ? (snapshot.error as ApiException).message
-                  : 'Something went wrong.'),
+              child: Text(
+                snapshot.error is ApiException ? (snapshot.error as ApiException).message : 'Something went wrong.',
+              ),
             );
           }
           final courses = snapshot.data ?? const [];
@@ -58,6 +59,22 @@ class _CoursesTabState extends State<CoursesTab> {
                     label: const Text('Explore courses'),
                   ),
                 ],
+              ),
+            );
+          }
+          if (context.isTablet) {
+            return MaxWidth(
+              maxWidth: 960,
+              child: GridView.builder(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 24),
+                gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
+                  maxCrossAxisExtent: 440,
+                  mainAxisExtent: 92,
+                  crossAxisSpacing: 12,
+                  mainAxisSpacing: 12,
+                ),
+                itemCount: courses.length,
+                itemBuilder: (context, i) => _CourseCard(course: courses[i]),
               ),
             );
           }
@@ -94,10 +111,7 @@ class _CourseCard extends StatelessWidget {
               Container(
                 width: 48,
                 height: 48,
-                decoration: BoxDecoration(
-                  color: scheme.primaryContainer,
-                  borderRadius: BorderRadius.circular(12),
-                ),
+                decoration: BoxDecoration(color: scheme.primaryContainer, borderRadius: BorderRadius.circular(12)),
                 child: Icon(Icons.menu_book_rounded, color: scheme.onPrimaryContainer),
               ),
               const SizedBox(width: 14),
@@ -105,15 +119,16 @@ class _CourseCard extends StatelessWidget {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(course.title,
-                        style: Theme.of(context).textTheme.titleMedium,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis),
+                    Text(
+                      course.title,
+                      style: Theme.of(context).textTheme.titleMedium,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     if (subtitle.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 2),
-                        child: Text(subtitle,
-                            style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13)),
+                        child: Text(subtitle, style: TextStyle(color: Theme.of(context).hintColor, fontSize: 13)),
                       ),
                   ],
                 ),
@@ -137,7 +152,9 @@ class _CenteredScroll extends StatelessWidget {
     return ListView(
       children: [
         const SizedBox(height: 140),
-        Center(child: Padding(padding: const EdgeInsets.all(24), child: child)),
+        Center(
+          child: Padding(padding: const EdgeInsets.all(24), child: child),
+        ),
       ],
     );
   }

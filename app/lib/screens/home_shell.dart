@@ -3,11 +3,13 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../auth.dart';
+import '../responsive.dart';
 import 'courses_screen.dart';
 import 'dashboard_tab.dart';
 
-/// The signed-in home: a bottom-nav shell over the Dashboard and Courses tabs.
-/// Course, quiz, and attempt screens push on top of this.
+/// The signed-in home. On phones it's a bottom-nav shell; on tablets it switches
+/// to a side navigation rail — same tabs, roomier layout. Course, quiz, and
+/// attempt screens push on top.
 class HomeShell extends StatefulWidget {
   const HomeShell({super.key});
 
@@ -20,8 +22,16 @@ class _HomeShellState extends State<HomeShell> {
 
   static const _titles = ['Dashboard', 'My courses'];
 
+  void _select(int i) => setState(() => _index = i);
+
   @override
   Widget build(BuildContext context) {
+    final isTablet = context.isTablet;
+
+    final body = SafeArea(
+      child: IndexedStack(index: _index, children: const [DashboardTab(), CoursesTab()]),
+    );
+
     return Scaffold(
       appBar: AppBar(
         title: Text(_titles[_index]),
@@ -38,28 +48,49 @@ class _HomeShellState extends State<HomeShell> {
           ),
         ],
       ),
-      body: SafeArea(
-        child: IndexedStack(
-          index: _index,
-          children: const [DashboardTab(), CoursesTab()],
-        ),
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _index,
-        onDestinationSelected: (i) => setState(() => _index = i),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.dashboard_outlined),
-            selectedIcon: Icon(Icons.dashboard_rounded),
-            label: 'Home',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.menu_book_outlined),
-            selectedIcon: Icon(Icons.menu_book_rounded),
-            label: 'Courses',
-          ),
-        ],
-      ),
+      body: isTablet
+          ? Row(
+              children: [
+                NavigationRail(
+                  selectedIndex: _index,
+                  onDestinationSelected: _select,
+                  labelType: NavigationRailLabelType.all,
+                  destinations: const [
+                    NavigationRailDestination(
+                      icon: Icon(Icons.dashboard_outlined),
+                      selectedIcon: Icon(Icons.dashboard_rounded),
+                      label: Text('Home'),
+                    ),
+                    NavigationRailDestination(
+                      icon: Icon(Icons.menu_book_outlined),
+                      selectedIcon: Icon(Icons.menu_book_rounded),
+                      label: Text('Courses'),
+                    ),
+                  ],
+                ),
+                const VerticalDivider(width: 1),
+                Expanded(child: body),
+              ],
+            )
+          : body,
+      bottomNavigationBar: isTablet
+          ? null
+          : NavigationBar(
+              selectedIndex: _index,
+              onDestinationSelected: _select,
+              destinations: const [
+                NavigationDestination(
+                  icon: Icon(Icons.dashboard_outlined),
+                  selectedIcon: Icon(Icons.dashboard_rounded),
+                  label: 'Home',
+                ),
+                NavigationDestination(
+                  icon: Icon(Icons.menu_book_outlined),
+                  selectedIcon: Icon(Icons.menu_book_rounded),
+                  label: 'Courses',
+                ),
+              ],
+            ),
     );
   }
 }

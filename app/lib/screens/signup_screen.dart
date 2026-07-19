@@ -1,18 +1,19 @@
 import 'package:flutter/material.dart';
-import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 
 import '../api_client.dart';
 import '../auth.dart';
 
-class LoginScreen extends StatefulWidget {
-  const LoginScreen({super.key});
+/// B2C self sign-up: name, email, password → a new learner account, signed in.
+class SignupScreen extends StatefulWidget {
+  const SignupScreen({super.key});
 
   @override
-  State<LoginScreen> createState() => _LoginScreenState();
+  State<SignupScreen> createState() => _SignupScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> {
+class _SignupScreenState extends State<SignupScreen> {
+  final _name = TextEditingController();
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
@@ -20,19 +21,26 @@ class _LoginScreenState extends State<LoginScreen> {
 
   @override
   void dispose() {
+    _name.dispose();
     _email.dispose();
     _password.dispose();
     super.dispose();
   }
 
   Future<void> _submit() async {
+    final name = _name.text.trim();
+    final email = _email.text.trim();
+    if (name.isEmpty || email.isEmpty || _password.text.length < 8) {
+      setState(() => _error = 'Enter your name, email, and a password of at least 8 characters.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await context.read<AuthState>().login(_email.text.trim(), _password.text);
-      // The router redirect moves us to the course list.
+      await context.read<AuthState>().register(name, email, _password.text);
+      // The router redirect moves us into the app.
     } on ApiException catch (e) {
       setState(() => _error = e.message);
     } catch (_) {
@@ -45,6 +53,7 @@ class _LoginScreenState extends State<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      appBar: AppBar(title: const Text('Create account')),
       body: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 400),
@@ -53,29 +62,20 @@ class _LoginScreenState extends State<LoginScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Center(
-                  child: Container(
-                    width: 64,
-                    height: 64,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.primaryContainer,
-                      borderRadius: BorderRadius.circular(18),
-                    ),
-                    child: Icon(
-                      Icons.school_rounded,
-                      size: 34,
-                      color: Theme.of(context).colorScheme.onPrimaryContainer,
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 20),
-                Text('Welcome back', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
+                Text('Start learning', style: Theme.of(context).textTheme.headlineMedium, textAlign: TextAlign.center),
                 Text(
-                  'Sign in to keep learning',
+                  'Create your account',
                   style: TextStyle(color: Theme.of(context).hintColor),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 28),
+                TextField(
+                  controller: _name,
+                  textCapitalization: TextCapitalization.words,
+                  autofillHints: const [AutofillHints.name],
+                  decoration: const InputDecoration(labelText: 'Name', border: OutlineInputBorder()),
+                ),
+                const SizedBox(height: 12),
                 TextField(
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
@@ -86,9 +86,13 @@ class _LoginScreenState extends State<LoginScreen> {
                 TextField(
                   controller: _password,
                   obscureText: true,
-                  autofillHints: const [AutofillHints.password],
+                  autofillHints: const [AutofillHints.newPassword],
                   onSubmitted: (_) => _submit(),
-                  decoration: const InputDecoration(labelText: 'Password', border: OutlineInputBorder()),
+                  decoration: const InputDecoration(
+                    labelText: 'Password',
+                    helperText: 'At least 8 characters',
+                    border: OutlineInputBorder(),
+                  ),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: 12),
@@ -99,12 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                   onPressed: _busy ? null : _submit,
                   child: _busy
                       ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                      : const Text('Sign in'),
-                ),
-                const SizedBox(height: 8),
-                TextButton(
-                  onPressed: _busy ? null : () => context.push('/signup'),
-                  child: const Text('New here? Create an account'),
+                      : const Text('Create account'),
                 ),
               ],
             ),
