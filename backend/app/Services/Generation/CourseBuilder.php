@@ -2,13 +2,11 @@
 
 namespace App\Services\Generation;
 
-use App\ContentBlocks\BlockType;
 use App\Models\Course;
 use App\Models\CourseNode;
 use App\Models\SchemaLevel;
 use App\Models\SchemaVersion;
 use App\Models\User;
-use App\Services\Content\BlockEditor;
 use App\Services\Courses\CreateCourse;
 use App\Services\Tree\CourseTree;
 use Illuminate\Support\Collection;
@@ -29,7 +27,7 @@ final class CourseBuilder
     public function __construct(
         private readonly CreateCourse $createCourse,
         private readonly CourseTree $tree,
-        private readonly BlockEditor $blocks,
+        private readonly ContentWriter $content,
     ) {}
 
     private int $created = 0;
@@ -84,82 +82,13 @@ final class CourseBuilder
                 $node->update(['summary' => $summary]);
             }
 
-            $this->addContent($node, $level, trim((string) ($spec['content'] ?? '')));
+            $this->content->write($node, $level, trim((string) ($spec['content'] ?? '')));
 
             $children = $spec['children'] ?? [];
             if (is_array($children)) {
                 $this->buildNodes($course, $children, $node, $levels);
             }
         }
-    }
-
-    private function addContent(CourseNode $node, SchemaLevel $level, string $content): void
-    {
-        if ($content === '' || ! $level->allows_content
-            || ! in_array(BlockType::RichText->value, $level->allowed_block_types, true)) {
-            return;
-        }
-
-        try {
-            $block = $this->blocks->append($node, BlockType::RichText->value);
-            $this->blocks->updatePayload($block, [
-                'format' => 'portable_text',
-                'body' => $this->toPortableText($content),
-            ]);
-        } catch (RuntimeException) {
-            // A malformed block payload should not sink the node.
-        }
-    }
-
-    /**
-     * Convert lightly-marked text (paragraphs, #/##/### headings, - bullets) into
-     * Portable Text blocks.
-     *
-     * @return list<array<string, mixed>>
-     */
-    private function toPortableText(string $text): array
-    {
-        $body = [];
-
-        foreach (preg_split('/\n\s*\n/', trim($text)) ?: [] as $chunk) {
-            $chunk = trim((string) $chunk);
-            if ($chunk === '') {
-                continue;
-            }
-
-            if (preg_match('/^(#{1,3})\s+(.+)/s', $chunk, $m) === 1) {
-                $style = ['#' => 'h2', '##' => 'h3', '###' => 'h4'][$m[1]];
-                $body[] = $this->block($style, trim($m[2]));
-            } elseif (preg_match('/^\s*[-*]\s+/', $chunk) === 1) {
-                foreach (explode("\n", $chunk) as $line) {
-                    $item = trim(preg_replace('/^\s*[-*]\s+/', '', $line) ?? '');
-                    if ($item !== '') {
-                        $body[] = $this->block('normal', $item, listItem: 'bullet');
-                    }
-                }
-            } else {
-                $body[] = $this->block('normal', $chunk);
-            }
-        }
-
-        return $body;
-    }
-
-    /** @return array<string, mixed> */
-    private function block(string $style, string $text, ?string $listItem = null): array
-    {
-        $block = [
-            '_type' => 'block',
-            'style' => $style,
-            'markDefs' => [],
-            'children' => [['_type' => 'span', 'text' => $text, 'marks' => []]],
-        ];
-
-        if ($listItem !== null) {
-            $block['listItem'] = $listItem;
-        }
-
-        return $block;
     }
 
     /** @return list<array<string, mixed>> */

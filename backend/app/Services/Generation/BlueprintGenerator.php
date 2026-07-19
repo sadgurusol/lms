@@ -2,7 +2,6 @@
 
 namespace App\Services\Generation;
 
-use App\Ai\AiReply;
 use App\Ai\AnthropicClient;
 use App\Models\CourseGeneration;
 use App\Models\SchemaLevel;
@@ -12,75 +11,40 @@ use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
 /**
- * Turns a PDF textbook or a topic brief into a course blueprint for
- * {@see CourseBuilder}, in two phases so it scales to whole textbooks:
+ * Turns a PDF textbook or a topic brief into a course, in two phases so it scales
+ * to whole textbooks without one giant, timeout-prone request:
  *
- *   1. Outline  — one small request for the course STRUCTURE (levels + titles
- *      only, no teaching text). Structure is compact, so it fits comfortably.
- *   2. Content  — a separate request per content-bearing node to write just
- *      that topic's teaching text. Each stays well under the token ceiling.
+ *   - {@see outline()}     — one small request for the course STRUCTURE (levels
+ *     and titles only, no teaching text). Structure is compact, so it fits.
+ *   - {@see contentFor()}  — one request per content-bearing node for just that
+ *     topic's teaching text. The orchestration ({@see GenerateCourseJob},
+ *     {@see GenerateContentJob}) runs these as separate short queue jobs.
  *
- * A PDF source is sent once and prompt-cached, so the per-node content calls
- * reuse it cheaply. See docs/14-course-generation.md.
+ * A PDF source is sent once per request and prompt-cached, so the per-node
+ * content calls reuse it cheaply. See docs/14-course-generation.md.
  */
 final class BlueprintGenerator
 {
     public function __construct(private readonly AnthropicClient $ai) {}
 
-    private int $inputTokens = 0;
-
-    private int $outputTokens = 0;
-
-    /** Base64 of the source PDF, read and encoded once per run. */
+    /** Base64 of the source PDF, read and encoded once per instance. */
     private ?string $pdfBase64 = null;
 
     /**
+     * Phase 1: ask for the nested course structure (titles only) and parse it.
+     *
      * @return array{blueprint: array<string, mixed>, inputTokens: int, outputTokens: int}
      */
-    public function generate(CourseGeneration $generation): array
-    {
-        $this->inputTokens = 0;
-        $this->outputTokens = 0;
-        $this->pdfBase64 = null;
-
-        $version = $generation->schemaVersion;
-
-        // Which level names carry teaching content (lowercased for matching).
-        $contentLevels = $version->levels()->get()
-            ->filter(fn (SchemaLevel $l) => $l->allows_content)
-            ->map(fn (SchemaLevel $l) => mb_strtolower($l->name))
-            ->values()
-            ->all();
-
-        // Phase 1: structure only.
-        $outline = $this->requestOutline($generation, $version);
-        $nodes = $outline['nodes'] ?? [];
-        if (! is_array($nodes)) {
-            $nodes = [];
-        }
-
-        // Phase 2: fill teaching content per content-bearing node.
-        $this->fillContent($nodes, $contentLevels, $generation, [$generation->name]);
-
-        return [
-            'blueprint' => ['nodes' => $nodes],
-            'inputTokens' => $this->inputTokens,
-            'outputTokens' => $this->outputTokens,
-        ];
-    }
-
-    /** Phase 1: ask for the nested structure (titles only), and parse it. */
-    private function requestOutline(CourseGeneration $generation, SchemaVersion $version): array
+    public function outline(CourseGeneration $generation): array
     {
         $reply = $this->ai->complete(
-            $this->outlineSystemPrompt($version, $generation->name),
+            $this->outlineSystemPrompt($generation->schemaVersion, $generation->name),
             [...$this->sourceBlocks($generation), [
                 'type' => 'text',
                 'text' => 'Produce the course STRUCTURE — levels and titles only, no teaching content — following the schema and rules.',
             ]],
             (int) config('services.anthropic.generation_max_tokens', 16000),
         );
-        $this->tally($reply);
 
         if ($reply->stopReason === 'max_tokens') {
             throw new RuntimeException(
@@ -89,73 +53,40 @@ final class BlueprintGenerator
             );
         }
 
-        return $this->parse($reply->text);
+        return [
+            'blueprint' => $this->parse($reply->text),
+            'inputTokens' => $reply->inputTokens,
+            'outputTokens' => $reply->outputTokens,
+        ];
     }
 
     /**
-     * Phase 2: walk the outline and, for each content-bearing node, request its
-     * teaching text and set it on the node. Mutates $nodes in place.
-     *
-     * @param  list<mixed>  $nodes
-     * @param  list<string>  $contentLevels
-     * @param  list<string>  $path  Titles from the course root down to here.
-     */
-    private function fillContent(array &$nodes, array $contentLevels, CourseGeneration $generation, array $path): void
-    {
-        foreach ($nodes as &$node) {
-            if (! is_array($node)) {
-                continue;
-            }
-
-            $level = mb_strtolower(trim((string) ($node['level'] ?? '')));
-            $title = trim((string) ($node['title'] ?? '')) ?: 'Untitled';
-            $here = [...$path, $title];
-
-            if (in_array($level, $contentLevels, true)) {
-                $node['content'] = $this->requestContent($generation, $here);
-            }
-
-            $children = $node['children'] ?? null;
-            if (is_array($children)) {
-                $this->fillContent($children, $contentLevels, $generation, $here);
-                $node['children'] = $children;
-            }
-        }
-        unset($node);
-    }
-
-    /**
-     * Phase 2, one node: write teaching text for the topic at $path. A failure
-     * here leaves the node without content rather than sinking the whole course.
+     * Phase 2, one node: teaching text for the topic at $path (root title first,
+     * this topic's title last), grounded in the source material.
      *
      * @param  list<string>  $path
+     * @return array{text: string, inputTokens: int, outputTokens: int}
      */
-    private function requestContent(CourseGeneration $generation, array $path): string
+    public function contentFor(CourseGeneration $generation, array $path): array
     {
         $title = end($path) ?: 'this topic';
         $location = implode(' > ', $path);
 
-        try {
-            $reply = $this->ai->complete(
-                $this->contentSystemPrompt(),
-                [...$this->sourceBlocks($generation), [
-                    'type' => 'text',
-                    'text' => "Write the teaching content for the topic \"{$title}\" "
-                        ."(its place in the course: {$location}), grounded in the source material above.",
-                ]],
-                4000,
-            );
-            $this->tally($reply);
+        $reply = $this->ai->complete(
+            $this->contentSystemPrompt(),
+            [...$this->sourceBlocks($generation), [
+                'type' => 'text',
+                'text' => "Write the teaching content for the topic \"{$title}\" "
+                    ."(its place in the course: {$location}), grounded in the source material above.",
+            ]],
+            4000,
+        );
 
-            return trim($reply->text);
-        } catch (\Throwable $e) {
-            Log::warning('Course generation: content pass failed for a node.', [
-                'topic' => $location,
-                'error' => $e->getMessage(),
-            ]);
-
-            return '';
-        }
+        return [
+            'text' => trim($reply->text),
+            'inputTokens' => $reply->inputTokens,
+            'outputTokens' => $reply->outputTokens,
+        ];
     }
 
     private function outlineSystemPrompt(SchemaVersion $version, string $name): string
@@ -260,12 +191,6 @@ final class BlueprintGenerator
         }
 
         return $this->pdfBase64;
-    }
-
-    private function tally(AiReply $reply): void
-    {
-        $this->inputTokens += $reply->inputTokens;
-        $this->outputTokens += $reply->outputTokens;
     }
 
     /**

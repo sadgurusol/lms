@@ -51,10 +51,13 @@ return [
         // curl stalls on the AAAA address and times out (cURL error 28). Set
         // ANTHROPIC_FORCE_IPV4=false only if you truly need IPv6.
         'force_ipv4' => filter_var(env('ANTHROPIC_FORCE_IPV4', true), FILTER_VALIDATE_BOOL),
-        // Wall-clock budget for a whole course generation (outline + one content
-        // call per topic). Must stay below the queue connection's retry_after
-        // (see config/queue.php) or the job is re-dispatched while still running.
+        // Budget for the orchestrator (the structure/outline call, then it hands
+        // off to a chain of per-topic content jobs). Must stay below the queue
+        // connection's retry_after (see config/queue.php).
         'generation_timeout' => (int) env('GENERATION_TIMEOUT', 1800),
+        // Budget for a single per-topic content job (one API call). Short, so a
+        // big course is many short jobs rather than one long one.
+        'generation_content_timeout' => (int) env('GENERATION_CONTENT_TIMEOUT', 180),
     ],
 
     'voyage' => [

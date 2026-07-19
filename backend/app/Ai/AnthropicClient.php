@@ -108,8 +108,9 @@ class AnthropicClient
                 ->connectTimeout(20)
                 ->timeout(300)
                 // The connection to Anthropic can blip (transient network / DNS);
-                // retry a couple of times before giving up on the whole run.
-                ->retry(3, 3000, throw: true)
+                // retry those a couple of times. Not HTTP error responses — the
+                // caller handles those via $response->failed() below.
+                ->retry(3, 3000, fn ($e) => $e instanceof ConnectionException, throw: true)
                 ->post(self::ENDPOINT, [
                     'model' => (string) config('services.anthropic.model'),
                     'max_tokens' => $maxTokens,

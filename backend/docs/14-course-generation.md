@@ -12,25 +12,27 @@ nothing is auto-published.
    mode generates from the model's own knowledge (e.g. a NEET syllabus).
 2. A `CourseGeneration` row is created (`pending`) and `GenerateCourseJob` is
    queued. The studio page polls until it finishes.
-3. The job runs `BlueprintGenerator` in **two phases** so it scales to whole
-   textbooks instead of truncating in one giant reply:
-   - **Outline** — one small request for the course *structure* (levels + titles
-     only, no teaching text), described against the **schema hierarchy** (level
-     names, nesting, occurrence limits). For a PDF it sends the document natively
-     (Claude reads PDFs, text and figures); for a brief it sends the text.
-   - **Content** — a separate request per content-bearing node writes just that
-     topic's teaching text (plain text, not JSON). Each stays well under the
-     token ceiling. A PDF source is sent **once and prompt-cached**, so the many
-     content calls reuse it cheaply. A content call that fails leaves that node
-     without content rather than sinking the whole course.
-   - `CourseBuilder` then turns the filled blueprint into a draft course using the
-     same authoring services a human uses — `CreateCourse`, `CourseTree`,
-     `BlockEditor` — mapping level names to schema levels and converting the
-     content text to Portable Text.
-4. On success the generation is `completed` with a link to the draft; on failure
-   it's `failed` with the error, and can be **retried** from the studio (a failed
-   PDF run keeps its upload so no re-upload is needed). Token usage across all
-   phases is summed and recorded per run.
+3. Generation runs in **two phases, split across many short queue jobs** so a big
+   course is never one long, timeout-prone job:
+   - **Outline** (`GenerateCourseJob` → `BlueprintGenerator::outline`) — one small
+     request for the course *structure* (levels + titles only, no teaching text),
+     described against the **schema hierarchy** (level names, nesting, occurrence
+     limits). For a PDF it sends the document natively (Claude reads PDFs, text
+     and figures); for a brief it sends the text. `CourseBuilder` builds the draft
+     course tree from it (via `CreateCourse`, `CourseTree`) — nodes, no content yet.
+   - **Content** (`GenerateContentJob`, chained) — one short job per content-bearing
+     node calls `BlueprintGenerator::contentFor` for just that topic's teaching
+     text (plain text, not JSON) and writes it with `ContentWriter`, then dispatches
+     itself for the next node. "Next node" is *the next content-bearing node with no
+     rich-text block yet*, so the chain is idempotent and resumable. A PDF source is
+     sent **once per call and prompt-cached**, so the many content calls reuse it
+     cheaply. A content call that fails writes a short placeholder and the chain
+     continues, rather than sinking the whole course.
+4. When no unfilled node remains, the last content job marks the generation
+   `completed` (and deletes the PDF). On failure it's `failed` with the error and
+   can be **retried** from the studio — a retry **resumes**: it reuses the built
+   course and fills only the topics still missing content (a failed PDF run keeps
+   its upload). Token usage across outline + all content calls is summed per run.
 
 ## Design notes
 
@@ -69,14 +71,12 @@ long" message instead of a generic parse error. An unparseable reply is logged
 PDFs are stored on the default disk during the run and deleted afterwards (a
 failed run keeps its PDF so it can be retried).
 
-`GENERATION_MAX_TOKENS` (default 16000) caps the *outline* pass. `GENERATION_TIMEOUT`
-(default 1800s) is the wall-clock budget for a whole run — one API call per topic
-adds up, so big courses need it. **Three timers must stay ordered**: the queue
-connection's `retry_after` (default 2100s) **must exceed** `GENERATION_TIMEOUT`,
-which **must not exceed** the worker's `--timeout`. If `retry_after` is smaller,
-the queue re-dispatches the job while it is still running. On DigitalOcean set
-`ANTHROPIC_FORCE_IPV4=true` (the default) to avoid IPv6 connect timeouts.
-
-Very large textbooks still want **chapter-by-chapter** runs — even two-phase, a
-single job that makes hundreds of calls will bump the timeout. A batched design
-(one short job per topic) is the next step if that ceiling is reached.
+`GENERATION_MAX_TOKENS` (default 16000) caps the *outline* pass. Because content
+is generated one topic per job, no single job is long: `GENERATION_TIMEOUT`
+(default 1800s) covers the orchestrator/outline, and `GENERATION_CONTENT_TIMEOUT`
+(default 180s) covers each per-topic content job. Both must stay **below** the
+queue connection's `retry_after` (default 2100s, see config/queue.php) and the
+worker's `--timeout`, or the queue re-dispatches a job while it is still running.
+On DigitalOcean set `ANTHROPIC_FORCE_IPV4=true` (the default) to avoid IPv6
+connect timeouts. The content chain is sequential; a very large course simply
+takes many short jobs (and the studio shows it working until the last completes).

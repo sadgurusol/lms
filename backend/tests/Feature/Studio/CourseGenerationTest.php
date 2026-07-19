@@ -2,6 +2,7 @@
 
 use App\Authorization\Roles;
 use App\Jobs\GenerateCourseJob;
+use App\Models\Course;
 use App\Models\CourseGeneration;
 use App\Services\Generation\BlueprintGenerator;
 use App\Services\Generation\CourseBuilder;
@@ -119,6 +120,83 @@ it('runs the job end to end, producing a draft course', function () {
 
     $topic = $course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Topic'))->sole();
     expect($topic->blocks()->where('type', 'rich_text')->exists())->toBeTrue();
+});
+
+it('writes a placeholder and still completes when a topic content call fails', function () {
+    config(['services.anthropic.key' => 'test-key']);
+
+    $structure = ['nodes' => [
+        ['level' => 'Part', 'title' => 'P', 'children' => [
+            ['level' => 'Chapter', 'title' => 'C'],
+        ]],
+    ]];
+    // Outline succeeds; every content call errors (500). The run must still finish.
+    Http::fake(fn ($request) => str_contains($request->body(), 'course STRUCTURE')
+        ? Http::response([
+            'content' => [['type' => 'text', 'text' => json_encode($structure)]],
+            'stop_reason' => 'end_turn',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 20],
+        ])
+        : Http::response(['error' => 'boom'], 500));
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Resilient',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::PENDING,
+    ]);
+
+    (new GenerateCourseJob($generation->id))->handle(app(BlueprintGenerator::class), app(CourseBuilder::class));
+
+    $generation->refresh();
+    expect($generation->status)->toBe(CourseGeneration::COMPLETED);
+
+    $chapter = $generation->course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Chapter'))->sole();
+    $body = $chapter->blocks()->where('type', 'rich_text')->sole()->payload['body'];
+    expect($body[0]['children'][0]['text'])->toContain('could not be generated');
+});
+
+it('resumes an already-built course without rebuilding it', function () {
+    config(['services.anthropic.key' => 'test-key']);
+    // Only content calls should happen on resume — no new outline.
+    Http::fake(['api.anthropic.com/*' => Http::response([
+        'content' => [['type' => 'text', 'text' => 'Real teaching text.']],
+        'stop_reason' => 'end_turn',
+        'usage' => ['input_tokens' => 5, 'output_tokens' => 10],
+    ])]);
+
+    // Pre-build a structure-only course, as the orchestrator would have on a run
+    // that then failed part-way through the content chain.
+    $structure = ['nodes' => [['level' => 'Part', 'title' => 'P', 'children' => [
+        ['level' => 'Chapter', 'title' => 'C'],
+    ]]]];
+    $course = app(CourseBuilder::class)->build($structure, $this->version, 'Resume', $this->author);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Resume',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'course_id' => $course->id,
+        'status' => CourseGeneration::PENDING,
+    ]);
+
+    $before = Course::count();
+    (new GenerateCourseJob($generation->id))->handle(app(BlueprintGenerator::class), app(CourseBuilder::class));
+
+    $generation->refresh();
+    expect($generation->status)->toBe(CourseGeneration::COMPLETED)
+        ->and($generation->course_id)->toBe($course->id)
+        ->and(Course::count())->toBe($before); // reused, not rebuilt
+
+    // No outline request was made on resume; the chapter got real content.
+    expect(Http::recorded()->every(fn ($pair) => ! str_contains($pair[0]->body(), 'course STRUCTURE')))->toBeTrue();
+    $chapter = $course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Chapter'))->sole();
+    expect($chapter->blocks()->where('type', 'rich_text')->sole()->payload['body'][0]['children'][0]['text'])
+        ->toBe('Real teaching text.');
 });
 
 it('recovers an outline whose JSON has raw newlines', function () {

@@ -8,14 +8,17 @@ use App\Services\Generation\BlueprintGenerator;
 use App\Services\Generation\CourseBuilder;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Queue\Queueable;
-use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Throwable;
 
 /**
- * Runs a course generation off the request: ask the model for an outline, build
- * the draft course from it, and record the result. AI generation is slow and
- * costly, so this never auto-retries. See docs/14-course-generation.md.
+ * Orchestrates a course generation: ask the model for the STRUCTURE (one quick
+ * call), build the draft course tree from it, then hand off to a chain of
+ * {@see GenerateContentJob}s — one short job per topic — to fill teaching
+ * content. Splitting the work keeps every job well under any queue timeout, so
+ * the total length of a big course no longer matters. Never auto-retries; a
+ * failed run is retried from the studio and *resumes* (the structure is kept).
+ * See docs/14-course-generation.md.
  */
 class GenerateCourseJob implements ShouldQueue
 {
@@ -27,8 +30,7 @@ class GenerateCourseJob implements ShouldQueue
 
     public function __construct(public readonly string $generationId)
     {
-        // Two-phase generation is one API call per topic, so a real course can
-        // run for many minutes. Configurable; keep below the queue retry_after.
+        // Only the outline call runs here (content is chained), so this is short.
         $this->timeout = (int) config('services.anthropic.generation_timeout', 1800);
     }
 
@@ -43,23 +45,24 @@ class GenerateCourseJob implements ShouldQueue
         $generation->update(['status' => CourseGeneration::PROCESSING]);
 
         try {
-            $result = $blueprints->generate($generation);
-            $actor = User::findOrFail($generation->requested_by);
+            // Resume: if the structure was already built (e.g. a retry after the
+            // content chain failed), skip straight to filling remaining topics.
+            if ($generation->course_id === null) {
+                $generation->update(['error' => null, 'input_tokens' => 0, 'output_tokens' => 0]);
 
-            $course = $builder->build($result['blueprint'], $generation->schemaVersion, $generation->name, $actor);
+                $outline = $blueprints->outline($generation);
+                $actor = User::findOrFail($generation->requested_by);
+                $course = $builder->build($outline['blueprint'], $generation->schemaVersion, $generation->name, $actor);
 
-            $generation->update([
-                'status' => CourseGeneration::COMPLETED,
-                'course_id' => $course->id,
-                'input_tokens' => $result['inputTokens'],
-                'output_tokens' => $result['outputTokens'],
-            ]);
+                $generation->update(['course_id' => $course->id]);
+                $generation->increment('input_tokens', $outline['inputTokens']);
+                $generation->increment('output_tokens', $outline['outputTokens']);
+            }
 
-            // Only drop the source PDF once we've succeeded — a failed run keeps
-            // it so the author can retry without re-uploading.
-            $this->cleanupPdf($generation);
+            GenerateContentJob::dispatch($generation->id);
         } catch (Throwable $e) {
             report($e);
+            // Keep the PDF (if any) so a retry can resume without re-uploading.
             $generation->update(['status' => CourseGeneration::FAILED, 'error' => Str::limit($e->getMessage(), 500)]);
         }
     }
@@ -68,13 +71,5 @@ class GenerateCourseJob implements ShouldQueue
     {
         $generation = CourseGeneration::find($this->generationId);
         $generation?->update(['status' => CourseGeneration::FAILED, 'error' => Str::limit($e->getMessage(), 500)]);
-    }
-
-    private function cleanupPdf(CourseGeneration $generation): void
-    {
-        if ($generation->pdf_path !== null) {
-            Storage::disk(config('filesystems.default'))->delete($generation->pdf_path);
-            $generation->update(['pdf_path' => null]);
-        }
     }
 }
