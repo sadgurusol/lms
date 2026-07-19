@@ -11,5 +11,8 @@ final readonly class AiReply
         public string $text,
         public int $inputTokens,
         public int $outputTokens,
+        // Why the model stopped: 'end_turn', 'max_tokens', etc. Null when unknown
+        // (e.g. streamed replies). A 'max_tokens' stop means the reply was cut off.
+        public ?string $stopReason = null,
     ) {}
 }

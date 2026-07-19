@@ -110,6 +110,70 @@ it('runs the job end to end, producing a draft course', function () {
         ->and($course->nodes()->count())->toBe(3);
 });
 
+it('decodes an outline whose content has raw newlines', function () {
+    config(['services.anthropic.key' => 'test-key']);
+
+    // Raw newlines inside the "content" string — invalid JSON per spec, but the
+    // model emits it constantly. The parser must recover instead of failing.
+    $json = '{"nodes":[{"level":"Part","title":"P","children":['
+        .'{"level":"Chapter","title":"C","children":['
+        ."{\"level\":\"Topic\",\"title\":\"T\",\"content\":\"Line one.\n\nLine two.\"}]}]}]}";
+
+    Http::fake([
+        'api.anthropic.com/*' => Http::response([
+            'content' => [['type' => 'text', 'text' => $json]],
+            'stop_reason' => 'end_turn',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 20],
+        ]),
+    ]);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Newlines',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::PENDING,
+    ]);
+
+    (new GenerateCourseJob($generation->id))->handle(
+        app(BlueprintGenerator::class),
+        app(CourseBuilder::class),
+    );
+
+    expect($generation->refresh()->status)->toBe(CourseGeneration::COMPLETED)
+        ->and($generation->course->nodes()->count())->toBe(3);
+});
+
+it('fails clearly when the reply is truncated at the token ceiling', function () {
+    config(['services.anthropic.key' => 'test-key']);
+
+    Http::fake([
+        'api.anthropic.com/*' => Http::response([
+            'content' => [['type' => 'text', 'text' => '{"nodes":[{"level":"Part","title":"P","children":[']],
+            'stop_reason' => 'max_tokens',
+            'usage' => ['input_tokens' => 10, 'output_tokens' => 16000],
+        ]),
+    ]);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Too long',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::PENDING,
+    ]);
+
+    (new GenerateCourseJob($generation->id))->handle(
+        app(BlueprintGenerator::class),
+        app(CourseBuilder::class),
+    );
+
+    expect($generation->refresh()->status)->toBe(CourseGeneration::FAILED)
+        ->and($generation->error)->toContain('cut off');
+});
+
 it('marks the generation failed when the AI returns nonsense', function () {
     config(['services.anthropic.key' => 'test-key']);
     Http::fake([

@@ -75,7 +75,7 @@ class AnthropicClient
      *
      * @param  list<array<string, mixed>>  $content  Anthropic content blocks.
      */
-    public function complete(string $system, array $content, int $maxTokens = 8000): AiReply
+    public function complete(string $system, array $content, int $maxTokens = 16000): AiReply
     {
         $key = (string) config('services.anthropic.key');
 
@@ -116,6 +116,7 @@ class AnthropicClient
             text: $text,
             inputTokens: (int) $response->json('usage.input_tokens', 0),
             outputTokens: (int) $response->json('usage.output_tokens', 0),
+            stopReason: $response->json('stop_reason'),
         );
     }
 

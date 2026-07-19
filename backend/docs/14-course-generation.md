@@ -48,7 +48,19 @@ nothing is auto-published.
 - **Model fine-tuning is not used** and generally isn't needed: tailored content
   comes from a strong base model + a good brief/style prompt + author curation.
 
+## Robustness
+
+The model is asked for JSON only, but real replies vary — the parser tolerates a
+stray sentence or code fence (it takes the text from the first `{` to the last
+`}`) and escapes raw newlines/tabs that land inside `content` strings (invalid
+JSON that models emit constantly). If the reply is cut off at the output token
+ceiling (`stop_reason: max_tokens`), the run fails with a clear "outline was too
+long" message instead of a generic parse error. An unparseable reply is logged
+(`Log::warning`, head/tail) so it can be diagnosed.
+
 ## Requires
 
 `ANTHROPIC_API_KEY` (chat/generation). A queue worker for `GenerateCourseJob`.
 PDFs are stored on the default disk during the run and deleted afterwards.
+`GENERATION_MAX_TOKENS` (default 16000) caps generation output — raise it for
+bigger courses, but a whole textbook still wants chapter-by-chapter passes.

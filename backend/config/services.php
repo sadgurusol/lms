@@ -43,6 +43,9 @@ return [
     'anthropic' => [
         'key' => env('ANTHROPIC_API_KEY'),
         'model' => env('ANTHROPIC_MODEL', 'claude-sonnet-5'),
+        // Output ceiling for course generation. A whole-course outline with
+        // teaching text is large; too low a cap truncates the JSON mid-reply.
+        'generation_max_tokens' => (int) env('GENERATION_MAX_TOKENS', 16000),
     ],
 
     'voyage' => [

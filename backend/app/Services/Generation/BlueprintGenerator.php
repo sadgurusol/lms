@@ -6,6 +6,7 @@ use App\Ai\AnthropicClient;
 use App\Models\CourseGeneration;
 use App\Models\SchemaLevel;
 use App\Models\SchemaVersion;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use RuntimeException;
 
@@ -28,7 +29,17 @@ final class BlueprintGenerator
         $reply = $this->ai->complete(
             $this->systemPrompt($version, $generation->name),
             $this->userContent($generation),
+            (int) config('services.anthropic.generation_max_tokens', 16000),
         );
+
+        // A reply cut off at the token ceiling is incomplete JSON — say so plainly
+        // rather than letting it fail as "not valid JSON".
+        if ($reply->stopReason === 'max_tokens') {
+            throw new RuntimeException(
+                'The outline was too long and got cut off. Narrow the scope '
+                .'(fewer chapters, or generate chapter by chapter), then try again.'
+            );
+        }
 
         return [
             'blueprint' => $this->parse($reply->text),
@@ -123,7 +134,7 @@ final class BlueprintGenerator
 
     /**
      * Extract the JSON object from the model's reply (it is told to return only
-     * JSON, but a stray sentence must not break the run).
+     * JSON, but a stray sentence or code fence must not break the run).
      *
      * @return array<string, mixed>
      */
@@ -133,15 +144,88 @@ final class BlueprintGenerator
         $end = strrpos($text, '}');
 
         if ($start === false || $end === false || $end < $start) {
+            $this->logRaw($text);
             throw new RuntimeException('The AI did not return a usable outline.');
         }
 
-        $decoded = json_decode(substr($text, $start, $end - $start + 1), true);
+        $json = substr($text, $start, $end - $start + 1);
+
+        // Models routinely emit long "content" fields with real newlines/tabs,
+        // which are invalid inside a JSON string; escape those before decoding.
+        $decoded = json_decode($json, true);
+        if (! is_array($decoded)) {
+            $decoded = json_decode($this->escapeControlCharsInStrings($json), true);
+        }
 
         if (! is_array($decoded)) {
+            $this->logRaw($text);
             throw new RuntimeException('The AI outline was not valid JSON.');
         }
 
         return $decoded;
+    }
+
+    /**
+     * Escape raw control characters (newlines, tabs, etc.) that appear *inside*
+     * JSON string literals, which PHP's json_decode rejects. Walks the text
+     * tracking string/escape state so structural whitespace is left untouched.
+     */
+    private function escapeControlCharsInStrings(string $json): string
+    {
+        $out = '';
+        $inString = false;
+        $escaped = false;
+        $len = strlen($json);
+
+        for ($i = 0; $i < $len; $i++) {
+            $ch = $json[$i];
+
+            if ($escaped) {
+                $out .= $ch;
+                $escaped = false;
+
+                continue;
+            }
+
+            if ($ch === '\\') {
+                $out .= $ch;
+                $escaped = true;
+
+                continue;
+            }
+
+            if ($ch === '"') {
+                $inString = ! $inString;
+                $out .= $ch;
+
+                continue;
+            }
+
+            if ($inString && ord($ch) < 0x20) {
+                $out .= match ($ch) {
+                    "\n" => '\\n',
+                    "\r" => '\\r',
+                    "\t" => '\\t',
+                    "\f" => '\\f',
+                    "\x08" => '\\b',
+                    default => sprintf('\\u%04x', ord($ch)),
+                };
+
+                continue;
+            }
+
+            $out .= $ch;
+        }
+
+        return $out;
+    }
+
+    private function logRaw(string $text): void
+    {
+        Log::warning('Course generation: unparseable AI outline.', [
+            'length' => strlen($text),
+            'head' => mb_substr($text, 0, 500),
+            'tail' => mb_substr($text, -500),
+        ]);
     }
 }
