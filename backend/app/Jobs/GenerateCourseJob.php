@@ -49,11 +49,13 @@ class GenerateCourseJob implements ShouldQueue
                 'input_tokens' => $result['inputTokens'],
                 'output_tokens' => $result['outputTokens'],
             ]);
+
+            // Only drop the source PDF once we've succeeded — a failed run keeps
+            // it so the author can retry without re-uploading.
+            $this->cleanupPdf($generation);
         } catch (Throwable $e) {
             report($e);
             $generation->update(['status' => CourseGeneration::FAILED, 'error' => Str::limit($e->getMessage(), 500)]);
-        } finally {
-            $this->cleanupPdf($generation);
         }
     }
 
@@ -67,6 +69,7 @@ class GenerateCourseJob implements ShouldQueue
     {
         if ($generation->pdf_path !== null) {
             Storage::disk(config('filesystems.default'))->delete($generation->pdf_path);
+            $generation->update(['pdf_path' => null]);
         }
     }
 }

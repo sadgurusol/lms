@@ -39,6 +39,8 @@ class GenerationController extends Controller
                 'status' => $g->status,
                 'error' => $g->error,
                 'course_id' => $g->course_id,
+                'can_retry' => $g->status === CourseGeneration::FAILED
+                    && ($g->source_type === CourseGeneration::SOURCE_BRIEF || $g->pdf_path !== null),
                 'schema' => $g->schemaVersion->courseSchema->name.' v'.$g->schemaVersion->version,
                 'created_at' => $g->created_at?->toIso8601String(),
             ]);
@@ -81,6 +83,26 @@ class GenerationController extends Controller
         GenerateCourseJob::dispatch($generation->id);
 
         return back()->with('success', 'Generation started — it will appear below when ready.');
+    }
+
+    /**
+     * Re-run a failed generation. Brief runs always replay; a PDF run only
+     * replays while its uploaded file is still around (kept on failure).
+     */
+    public function retry(Request $request, CourseGeneration $generation): RedirectResponse
+    {
+        abort_unless($request->user()->can(Permissions::COURSE_CREATE), 403);
+        abort_unless($generation->requested_by === $request->user()->id, 403);
+        abort_unless($generation->status === CourseGeneration::FAILED, 422);
+
+        if ($generation->source_type === CourseGeneration::SOURCE_PDF && $generation->pdf_path === null) {
+            return back()->with('error', 'The uploaded PDF is no longer available — please upload it again.');
+        }
+
+        $generation->update(['status' => CourseGeneration::PENDING, 'error' => null]);
+        GenerateCourseJob::dispatch($generation->id);
+
+        return back()->with('success', 'Retrying generation — it will update below when ready.');
     }
 
     /** @return Collection<int, array{id: string, name: non-falsy-string}> */

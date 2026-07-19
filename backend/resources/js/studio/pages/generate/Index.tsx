@@ -11,6 +11,7 @@ type Generation = {
     status: 'pending' | 'processing' | 'completed' | 'failed';
     error: string | null;
     course_id: string | null;
+    can_retry: boolean;
     schema: string;
     created_at: string | null;
 };
@@ -83,8 +84,11 @@ export default function GenerateIndex({ generations, schemas }: Props) {
                                                 Open draft
                                             </Link>
                                         ) : g.status === 'failed' ? (
-                                            <span className="text-xs text-red-600" title={g.error ?? ''}>
-                                                {g.error ? g.error.slice(0, 60) : 'Failed'}
+                                            <span className="inline-flex items-center gap-2">
+                                                <span className="text-xs text-red-600" title={g.error ?? ''}>
+                                                    {g.error ? g.error.slice(0, 60) : 'Failed'}
+                                                </span>
+                                                {g.can_retry && <RetryButton id={g.id} />}
                                             </span>
                                         ) : (
                                             <span className="text-xs text-zinc-400">working…</span>
@@ -97,6 +101,26 @@ export default function GenerateIndex({ generations, schemas }: Props) {
                 </div>
             )}
         </StudioLayout>
+    );
+}
+
+function RetryButton({ id }: { id: string }) {
+    const [busy, setBusy] = useState(false);
+    return (
+        <button
+            type="button"
+            disabled={busy}
+            onClick={() =>
+                router.post(
+                    `/studio/generate/${id}/retry`,
+                    {},
+                    { preserveScroll: true, onStart: () => setBusy(true), onFinish: () => setBusy(false) },
+                )
+            }
+            className="rounded border border-zinc-300 px-2 py-0.5 text-xs font-medium text-zinc-700 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:text-zinc-300 dark:hover:bg-zinc-800"
+        >
+            {busy ? 'Retrying…' : 'Retry'}
+        </button>
     );
 }
 

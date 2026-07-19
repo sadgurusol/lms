@@ -174,6 +174,112 @@ it('fails clearly when the reply is truncated at the token ceiling', function ()
         ->and($generation->error)->toContain('cut off');
 });
 
+it('retries a failed generation, re-queuing the job', function () {
+    Queue::fake();
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Retry me',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::FAILED,
+        'error' => 'The AI outline was not valid JSON.',
+    ]);
+
+    $this->actingAs($this->author)
+        ->from('/studio/generate')
+        ->post("/studio/generate/{$generation->id}/retry")
+        ->assertSessionHas('success');
+
+    $generation->refresh();
+    expect($generation->status)->toBe(CourseGeneration::PENDING)
+        ->and($generation->error)->toBeNull();
+    Queue::assertPushed(GenerateCourseJob::class);
+});
+
+it('refuses to retry a generation that has not failed', function () {
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Done',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::COMPLETED,
+    ]);
+
+    $this->actingAs($this->author)
+        ->post("/studio/generate/{$generation->id}/retry")
+        ->assertStatus(422);
+});
+
+it('refuses to retry another author\'s generation', function () {
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'Not yours',
+        'source_type' => 'brief',
+        'brief' => 'x',
+        'status' => CourseGeneration::FAILED,
+    ]);
+
+    $this->actingAs(staff(Roles::CONTENT_AUTHOR))
+        ->post("/studio/generate/{$generation->id}/retry")
+        ->assertForbidden();
+});
+
+it('keeps the PDF on failure so it can be retried', function () {
+    config(['services.anthropic.key' => 'test-key']);
+    Storage::fake(config('filesystems.default'));
+    $path = Storage::disk(config('filesystems.default'))->putFileAs(
+        'generations', UploadedFile::fake()->create('t.pdf', 10, 'application/pdf'), 'book.pdf'
+    );
+    Http::fake(['api.anthropic.com/*' => Http::response([
+        'content' => [['type' => 'text', 'text' => 'nope']],
+        'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+    ])]);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'PDF fail',
+        'source_type' => 'pdf',
+        'pdf_path' => $path,
+        'status' => CourseGeneration::PENDING,
+    ]);
+    (new GenerateCourseJob($generation->id))->handle(app(BlueprintGenerator::class), app(CourseBuilder::class));
+
+    expect($generation->refresh()->status)->toBe(CourseGeneration::FAILED)
+        ->and($generation->pdf_path)->not->toBeNull();
+    Storage::disk(config('filesystems.default'))->assertExists($path);
+});
+
+it('drops the PDF once the generation succeeds', function () {
+    config(['services.anthropic.key' => 'test-key']);
+    Storage::fake(config('filesystems.default'));
+    $path = Storage::disk(config('filesystems.default'))->putFileAs(
+        'generations', UploadedFile::fake()->create('t.pdf', 10, 'application/pdf'), 'book.pdf'
+    );
+    Http::fake(['api.anthropic.com/*' => Http::response([
+        'content' => [['type' => 'text', 'text' => json_encode(['nodes' => [['level' => 'Part', 'title' => 'P']]])]],
+        'usage' => ['input_tokens' => 1, 'output_tokens' => 1],
+    ])]);
+
+    $generation = CourseGeneration::create([
+        'requested_by' => $this->author->id,
+        'schema_version_id' => $this->version->id,
+        'name' => 'PDF ok',
+        'source_type' => 'pdf',
+        'pdf_path' => $path,
+        'status' => CourseGeneration::PENDING,
+    ]);
+    (new GenerateCourseJob($generation->id))->handle(app(BlueprintGenerator::class), app(CourseBuilder::class));
+
+    expect($generation->refresh()->status)->toBe(CourseGeneration::COMPLETED)
+        ->and($generation->pdf_path)->toBeNull();
+    Storage::disk(config('filesystems.default'))->assertMissing($path);
+});
+
 it('marks the generation failed when the AI returns nonsense', function () {
     config(['services.anthropic.key' => 'test-key']);
     Http::fake([

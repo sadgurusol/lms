@@ -77,6 +77,7 @@ Route::prefix('studio')->name('studio.')->group(function () {
         // AI course generation (from a PDF or a topic brief).
         Route::get('/generate', [GenerationController::class, 'index'])->name('generate.index');
         Route::post('/generate', [GenerationController::class, 'store'])->name('generate.store');
+        Route::post('/generate/{generation}/retry', [GenerationController::class, 'retry'])->name('generate.retry');
 
         Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
         Route::post('/courses', [CourseController::class, 'store'])->name('courses.store');
