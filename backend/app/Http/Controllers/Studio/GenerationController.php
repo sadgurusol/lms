@@ -10,6 +10,7 @@ use App\Models\ContentBlock;
 use App\Models\CourseGeneration;
 use App\Models\CourseNode;
 use App\Models\SchemaVersion;
+use App\Services\Generation\GenerationSettings;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -87,6 +88,34 @@ class GenerationController extends Controller
         GenerateCourseJob::dispatch($generation->id);
 
         return back()->with('success', 'Generation started — it will appear below when ready.');
+    }
+
+    public function settings(Request $request, GenerationSettings $settings): Response
+    {
+        abort_unless($request->user()->can(Permissions::COURSE_CREATE), 403);
+
+        return Inertia::render('generate/Settings', [
+            'outlineInstructions' => $settings->outlineInstructions(),
+            'contentInstructions' => $settings->contentInstructions(),
+            // The fixed base prompts, shown read-only for context (the guidance
+            // fields are appended to these).
+            'baseOutlinePrompt' => GenerationSettings::BASE_OUTLINE_PROMPT,
+            'baseContentPrompt' => GenerationSettings::BASE_CONTENT_PROMPT,
+        ]);
+    }
+
+    public function updateSettings(Request $request, GenerationSettings $settings): RedirectResponse
+    {
+        abort_unless($request->user()->can(Permissions::COURSE_CREATE), 403);
+
+        $data = $request->validate([
+            'outlineInstructions' => ['nullable', 'string', 'max:4000'],
+            'contentInstructions' => ['nullable', 'string', 'max:4000'],
+        ]);
+
+        $settings->save($data['outlineInstructions'] ?? '', $data['contentInstructions'] ?? '');
+
+        return back()->with('success', 'Generation settings saved.');
     }
 
     /**

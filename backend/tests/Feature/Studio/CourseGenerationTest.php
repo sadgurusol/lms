@@ -6,17 +6,20 @@ use App\Models\Course;
 use App\Models\CourseGeneration;
 use App\Services\Generation\BlueprintGenerator;
 use App\Services\Generation\CourseBuilder;
+use App\Services\Generation\GenerationSettings;
 use Database\Seeders\RolesAndPermissionsSeeder;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Queue;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Sleep;
 use Inertia\Testing\AssertableInertia;
 
 beforeEach(function () {
     $this->seed(RolesAndPermissionsSeeder::class);
     $this->version = publish(textbookSchema());
     $this->author = staff(Roles::CONTENT_AUTHOR);
+    Sleep::fake(); // don't wait out retry backoff on faked failures
 });
 
 it('queues a generation from a brief', function () {
@@ -198,6 +201,35 @@ it('resumes an already-built course without rebuilding it', function () {
     $chapter = $course->nodes()->whereHas('schemaLevel', fn ($q) => $q->where('name', 'Chapter'))->sole();
     expect($chapter->blocks()->where('type', 'rich_text')->sole()->payload['body'][0]['children'][0]['text'])
         ->toBe('Real teaching text.');
+});
+
+it('shows the generation settings with the base prompts', function () {
+    $this->actingAs($this->author)
+        ->get('/studio/generate/settings')
+        ->assertInertia(fn (AssertableInertia $page) => $page
+            ->component('generate/Settings')
+            ->where('contentInstructions', '')
+            ->where('baseContentPrompt', fn (string $v) => str_contains($v, 'writing the lesson')));
+});
+
+it('refuses generation settings to a user without course.create', function () {
+    $this->actingAs(staff(Roles::CONTENT_REVIEWER))
+        ->get('/studio/generate/settings')
+        ->assertForbidden();
+});
+
+it('saves admin guidance and appends it to the content prompt', function () {
+    $this->actingAs($this->author)
+        ->from('/studio/generate/settings')
+        ->post('/studio/generate/settings', [
+            'contentInstructions' => 'Always include an SVG-style described diagram.',
+            'outlineInstructions' => '',
+        ])
+        ->assertSessionHas('success');
+
+    $prompt = app(GenerationSettings::class)->contentPrompt();
+    expect($prompt)->toContain('Always include an SVG-style described diagram.')
+        ->and($prompt)->toContain('writing the lesson'); // base is still there
 });
 
 it('reports live topic progress for a running generation', function () {

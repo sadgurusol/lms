@@ -25,7 +25,10 @@ use RuntimeException;
  */
 final class BlueprintGenerator
 {
-    public function __construct(private readonly AnthropicClient $ai) {}
+    public function __construct(
+        private readonly AnthropicClient $ai,
+        private readonly GenerationSettings $settings,
+    ) {}
 
     /** Base64 of the source PDF, read and encoded once per instance. */
     private ?string $pdfBase64 = null;
@@ -38,7 +41,7 @@ final class BlueprintGenerator
     public function outline(CourseGeneration $generation): array
     {
         $reply = $this->ai->complete(
-            $this->outlineSystemPrompt($generation->schemaVersion, $generation->name),
+            $this->settings->outlinePrompt($generation->name, $this->hierarchy($generation->schemaVersion)),
             [...$this->sourceBlocks($generation), [
                 'type' => 'text',
                 'text' => 'Produce the course STRUCTURE — levels and titles only, no teaching content — following the schema and rules.',
@@ -73,7 +76,7 @@ final class BlueprintGenerator
         $location = implode(' > ', $path);
 
         $reply = $this->ai->complete(
-            $this->contentSystemPrompt(),
+            $this->settings->contentPrompt(),
             [...$this->sourceBlocks($generation), [
                 'type' => 'text',
                 'text' => "Write the teaching content for the topic \"{$title}\" "
@@ -87,45 +90,6 @@ final class BlueprintGenerator
             'inputTokens' => $reply->inputTokens,
             'outputTokens' => $reply->outputTokens,
         ];
-    }
-
-    private function outlineSystemPrompt(SchemaVersion $version, string $name): string
-    {
-        $hierarchy = $this->hierarchy($version);
-
-        return <<<PROMPT
-        You are an expert curriculum designer. Outline a complete, well-organised course
-        titled "{$name}" as a nested STRUCTURE that conforms EXACTLY to the schema below.
-
-        ## Schema (use these exact level names and nesting; respect the occurrence limits)
-        {$hierarchy}
-
-        ## Rules
-        - Every node has a "level" (one of the level names above) and a "title".
-        - Nest nodes to match the hierarchy: a level's nodes go inside its parent level.
-        - Do NOT write any teaching content — titles and structure only. A short one-line
-          "summary" per node is allowed but optional.
-        - Cover the subject thoroughly but stay within each level's occurrence limits.
-
-        ## Output
-        Return ONLY a JSON object, no prose, in this shape (no "content" fields):
-        {"nodes":[{"level":"<name>","title":"...","summary":"...","children":[
-          {"level":"<name>","title":"..."}]}]}
-        PROMPT;
-    }
-
-    private function contentSystemPrompt(): string
-    {
-        return <<<'PROMPT'
-        You are an expert teacher writing the lesson for ONE topic in a course.
-
-        Rules:
-        - Write clear, accurate teaching material: explanations, worked examples, key points.
-        - Plain text only. Blank lines between paragraphs. You may use "## " / "### " for
-          subheadings and "- " for bullet lists. No other markup, no JSON, no preamble.
-        - Cover just the topic you are asked about, at an appropriate depth. Do not repeat
-          the topic title as a heading, and do not write content for other topics.
-        PROMPT;
     }
 
     /** Render the level tree as an indented, annotated outline for the prompt. */

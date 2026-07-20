@@ -39,11 +39,16 @@ export default function GenerateIndex({ generations, schemas }: Props) {
         <StudioLayout title="Generate a course">
             <Head title="Generate a course" />
 
-            <p className="mb-6 max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
-                Draft a course with AI — upload a textbook PDF, or describe the course and let it build
-                from the subject. It's structured to the schema you pick and lands as a <strong>draft</strong>{' '}
-                for you to review and publish. Generation runs in the background.
-            </p>
+            <div className="mb-6 flex items-start justify-between gap-4">
+                <p className="max-w-2xl text-sm text-zinc-600 dark:text-zinc-400">
+                    Draft a course with AI — upload a textbook PDF, or describe the course and let it build
+                    from the subject. It's structured to the schema you pick and lands as a <strong>draft</strong>{' '}
+                    for you to review and publish. Generation runs in the background.
+                </p>
+                <Link href="/studio/generate/settings" className="shrink-0 text-sm text-indigo-600 hover:underline">
+                    Settings
+                </Link>
+            </div>
 
             {schemas.length === 0 ? (
                 <p className="mb-6 rounded-md border border-amber-300 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-200">

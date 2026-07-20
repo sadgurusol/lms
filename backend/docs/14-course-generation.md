@@ -34,6 +34,23 @@ nothing is auto-published.
    course and fills only the topics still missing content (a failed PDF run keeps
    its upload). Token usage across outline + all content calls is summed per run.
 
+## Prompt settings (Studio → Generate → Settings)
+
+The base prompts are fixed (they carry the machine contract — schema, JSON shape,
+plain-text rules). Admins add **house-style guidance** (`GenerationSettings`,
+stored in `app_settings`) that is appended to the outline and content prompts —
+depth, tone, and especially how to handle figures. Gated on `course.create`.
+
+## Images
+
+The model produces **text only** — it cannot render or insert real images, and
+no image-generation service is wired up. So the content prompt tells it to
+**describe any figure/diagram/shape fully in words** and never write "see Figure
+1" for a picture the learner can't see. If you want real images, an author adds
+them to the draft (image blocks), or use Settings to ask for described/ASCII
+diagrams. Extracting figures from a source PDF, or generating SVG diagrams, are
+possible future features — not built.
+
 ## Design notes
 
 - **`CourseBuilder` is deterministic and AI-free** — it takes a parsed blueprint
@@ -64,6 +81,13 @@ JSON that models emit constantly). If the reply is cut off at the output token
 ceiling (`stop_reason: max_tokens`), the run fails with a clear "outline was too
 long" message instead of a generic parse error. An unparseable reply is logged
 (`Log::warning`, head/tail) so it can be diagnosed.
+
+Transient API failures — a connection blip, a rate limit (429), or an overloaded
+/ 5xx response — are retried with growing backoff inside the client, so one bad
+moment during a long run doesn't cost a topic. Only if a topic still fails after
+retries does it get a placeholder block ("add it manually") and the chain moves
+on. The studio's "done/total topics" counter includes placeholders, so a
+completed run may still have a few sections to fill by hand.
 
 ## Requires
 

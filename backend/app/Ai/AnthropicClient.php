@@ -4,6 +4,7 @@ namespace App\Ai;
 
 use App\Tutor\TutorChat;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Http;
 use Psr\Http\Message\StreamInterface;
 use RuntimeException;
@@ -33,6 +34,17 @@ class AnthropicClient
         return config('services.anthropic.force_ipv4', true)
             ? ['curl' => [CURLOPT_IPRESOLVE => CURL_IPRESOLVE_V4]]
             : [];
+    }
+
+    /** Whether a failed attempt is worth retrying: a connection blip or a transient server/rate-limit response. */
+    private function isTransient(\Throwable $e): bool
+    {
+        if ($e instanceof ConnectionException) {
+            return true;
+        }
+
+        return $e instanceof RequestException
+            && in_array($e->response->status(), [429, 500, 502, 503, 529], true);
     }
 
     /**
@@ -107,16 +119,19 @@ class AnthropicClient
                 ->withOptions($this->transportOptions())
                 ->connectTimeout(20)
                 ->timeout(300)
-                // The connection to Anthropic can blip (transient network / DNS);
-                // retry those a couple of times. Not HTTP error responses — the
-                // caller handles those via $response->failed() below.
-                ->retry(3, 3000, fn ($e) => $e instanceof ConnectionException, throw: true)
+                // Retry transient failures — a connection blip, a rate limit (429),
+                // or an overloaded/5xx response — with growing backoff, so one bad
+                // moment during a long run doesn't cost a topic. Persistent client
+                // errors (e.g. 400) are not retried; the caller handles them below.
+                ->retry(4, fn (int $attempt) => $attempt * 3000, fn ($e) => $this->isTransient($e), throw: true)
                 ->post(self::ENDPOINT, [
                     'model' => (string) config('services.anthropic.model'),
                     'max_tokens' => $maxTokens,
                     'system' => $system,
                     'messages' => [['role' => 'user', 'content' => $content]],
                 ]);
+        } catch (RequestException $e) {
+            throw new RuntimeException("The AI service failed (status {$e->response->status()}).", previous: $e);
         } catch (ConnectionException $e) {
             throw new RuntimeException(
                 'Could not reach the AI service (network/connection timeout). '
