@@ -3,6 +3,7 @@ import { useState, type FormEvent } from 'react';
 import StudioLayout from '@/studio/components/StudioLayout';
 import { BlockView, type Block } from '@/studio/components/BlockView';
 import { useConfirm } from '@/studio/components/ConfirmDialog';
+import LessonPlayer from '@/studio/components/LessonPlayer';
 
 type AddLevel = { schema_level_id: string; name: string; remaining: number | null };
 
@@ -204,10 +205,13 @@ function NodeRow({
 }) {
     const [renaming, setRenaming] = useState(false);
     const [showContent, setShowContent] = useState(false);
+    const [showPlayer, setShowPlayer] = useState(false);
     const confirm = useConfirm();
 
     const isFirst = index === 0;
     const isLast = index === siblings.length - 1;
+    // A lesson: its children are content leaves (Steps). Play it as a learner.
+    const isPlayableLesson = node.children.length > 0 && node.children.every((c) => c.children.length === 0 && c.allows_content);
 
     function move(direction: 'up' | 'down') {
         // after_node_id is the sibling this node should follow once moved.
@@ -244,6 +248,16 @@ function NodeRow({
                     <RenameForm node={node} onDone={() => setRenaming(false)} />
                 ) : (
                     <span className="min-w-0 flex-1 truncate font-medium">{node.title}</span>
+                )}
+
+                {isPlayableLesson && !renaming && (
+                    <button
+                        type="button"
+                        onClick={() => setShowPlayer(true)}
+                        className="rounded px-2 py-1 text-xs font-medium text-indigo-600 hover:bg-indigo-50 dark:text-indigo-400 dark:hover:bg-indigo-950"
+                    >
+                        ▶ Play
+                    </button>
                 )}
 
                 {node.allows_content && !renaming && (
@@ -303,6 +317,8 @@ function NodeRow({
                     </div>
                 )}
             </div>
+
+            {showPlayer && <LessonPlayer lessonNodeId={node.id} title={node.title} onClose={() => setShowPlayer(false)} />}
 
             {/* Read-only content, viewed in place. */}
             {showContent && !editable && (

@@ -32,6 +32,19 @@ final class BlockEditor
         BlockType::Embed->value,
     ];
 
+    /**
+     * Interactive block types authored in one shot with a full payload (they have
+     * no meaningful empty default and are produced by generation, not typed by
+     * hand). They carry external URLs / structured data, not a Media record, so
+     * they sit outside both AUTHORABLE and MEDIA_TYPES. Created via
+     * {@see appendAuthored()}.
+     */
+    public const GENERATED = [
+        BlockType::AnimatedReveal->value,
+        BlockType::Simulation->value,
+        BlockType::Animation->value,
+    ];
+
     /** Append a new block to the end of the node — the meaning of "add block". */
     public function append(CourseNode $node, string $type): ContentBlock
     {
@@ -89,6 +102,31 @@ final class BlockEditor
             'media_id' => $mediaId,
             'sort_key' => $this->sortKeyAfter($node, $this->lastBlockId($node)),
             'payload' => ['media_id' => $mediaId, ...$payload],
+        ]));
+    }
+
+    /**
+     * Create a non-media block with its full payload in one shot (no invalid
+     * default is ever inserted). For rich_text/callout/embed and the interactive
+     * GENERATED types. The saving hook validates the payload against the schema.
+     *
+     * @param  array<string, mixed>  $payload
+     */
+    public function appendAuthored(CourseNode $node, string $type, array $payload): ContentBlock
+    {
+        if (! in_array($type, [...self::AUTHORABLE, ...self::GENERATED], true)) {
+            throw new RuntimeException("A [{$type}] block cannot be authored here.");
+        }
+
+        if (! $node->permitsBlockType($type)) {
+            throw new RuntimeException('This section does not allow that kind of content.');
+        }
+
+        return DB::transaction(fn () => ContentBlock::create([
+            'course_node_id' => $node->id,
+            'type' => $type,
+            'sort_key' => $this->sortKeyAfter($node, $this->lastBlockId($node)),
+            'payload' => $payload,
         ]));
     }
 

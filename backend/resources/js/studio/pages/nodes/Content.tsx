@@ -3,6 +3,8 @@ import { useState, type FormEvent } from 'react';
 import StudioLayout from '@/studio/components/StudioLayout';
 import { BlockView } from '@/studio/components/BlockView';
 import { useConfirm } from '@/studio/components/ConfirmDialog';
+import LessonBuilder from '@/studio/components/LessonBuilder';
+import LessonPlayer from '@/studio/components/LessonPlayer';
 
 const MEDIA_TYPES = ['image', 'attachment', 'video'];
 
@@ -125,7 +127,7 @@ type Props = {
     course: { id: string; title: string };
     blocks: Block[];
     addable_types: string[];
-    can: { edit: boolean };
+    can: { edit: boolean; build_lesson?: boolean };
 };
 
 const opts = { preserveScroll: true, preserveState: true } as const;
@@ -140,9 +142,44 @@ const TYPE_LABEL: Record<string, string> = {
 };
 
 export default function NodeContent({ node, course, blocks, addable_types, can }: Props) {
+    const [showBuilder, setShowBuilder] = useState(false);
+    const [showPlayer, setShowPlayer] = useState(false);
     return (
         <StudioLayout title={`${node.title} · content`}>
             <Head title={`${node.title} · content`} />
+
+            {can.build_lesson && (
+                <div className="mb-4 flex items-center justify-between rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900/50 dark:bg-indigo-950/30">
+                    <p className="text-sm text-indigo-900 dark:text-indigo-200">
+                        ✨ Generate an <strong>animated lesson</strong> — build steps one at a time with AI (animated reveals + simulations).
+                    </p>
+                    <div className="flex shrink-0 gap-2">
+                        <button
+                            onClick={() => setShowPlayer(true)}
+                            className="rounded-md border border-indigo-300 px-4 py-2 text-sm font-medium text-indigo-700 hover:bg-indigo-100 dark:border-indigo-800 dark:text-indigo-300 dark:hover:bg-indigo-900/40"
+                        >
+                            ▶ Preview
+                        </button>
+                        <button
+                            onClick={() => setShowBuilder(true)}
+                            className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                        >
+                            Open builder
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {showBuilder && (
+                <LessonBuilder
+                    lessonNodeId={node.id}
+                    lessonTitle={node.title}
+                    courseId={course.id}
+                    onClose={() => setShowBuilder(false)}
+                />
+            )}
+
+            {showPlayer && <LessonPlayer lessonNodeId={node.id} title={node.title} onClose={() => setShowPlayer(false)} />}
 
             <div className="mb-6 flex items-center gap-3 text-sm text-zinc-600 dark:text-zinc-400">
                 <Link href={`/studio/courses/${course.id}`} className="hover:underline">
@@ -276,10 +313,14 @@ function BlockEditor({ block, editable }: { block: Block; editable: boolean }) {
             // and delete still apply.
             return <BlockView block={block} />;
         default:
+            // AI-generated blocks (animated_reveal / simulation / animation) are
+            // authored in the lesson builder, not typed here — show a read-only
+            // preview so the step's content is visible. Reorder/delete still apply.
             return (
-                <p className="text-sm text-zinc-500">
-                    This block type cannot be edited here.
-                </p>
+                <div>
+                    <BlockView block={block} />
+                    <p className="mt-1 text-xs text-zinc-400">Generated in the lesson builder — reorder or delete here; edit by regenerating.</p>
+                </div>
             );
     }
 }

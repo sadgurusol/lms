@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "animation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["url"],
+  "properties": {
+    "url": { "type": "string", "pattern": "^https?://" },
+    "poster_url": { "type": "string" },
+    "duration_s": { "type": "integer", "minimum": 0 }
+  }
+}

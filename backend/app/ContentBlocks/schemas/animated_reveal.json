@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "animated_reveal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["fragments"],
+  "properties": {
+    "voice_script": { "type": "string" },
+    "fragments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["md"],
+        "properties": {
+          "md": { "type": "string", "minLength": 1 },
+          "effect": { "enum": ["fade", "slide-up", "slide-left", "zoom", "typewriter"] },
+          "voice": { "type": "string" },
+          "duration_ms": { "type": "integer", "minimum": 100, "maximum": 6000 }
+        }
+      }
+    }
+  }
+}

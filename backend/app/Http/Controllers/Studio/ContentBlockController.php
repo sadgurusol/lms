@@ -52,8 +52,18 @@ class ContentBlockController extends Controller
                 'payload' => $this->withMediaUrl($block),
             ])->values(),
             'addable_types' => $this->addableTypes($node),
-            'can' => ['edit' => $editable],
+            'can' => ['edit' => $editable, 'build_lesson' => $editable && $this->hasAnimatedStepChild($node)],
         ]);
+    }
+
+    /** Does this node have a child level that accepts animated-reveal lessons? */
+    private function hasAnimatedStepChild(CourseNode $node): bool
+    {
+        return \App\Models\SchemaLevel::query()
+            ->where('parent_level_id', $node->schema_level_id)
+            ->get()
+            ->contains(fn ($l) => $l->allows_content
+                && in_array(\App\ContentBlocks\BlockType::AnimatedReveal->value, $l->allowed_block_types ?? [], true));
     }
 
     public function store(Request $request, CourseNode $node, BlockEditor $editor): RedirectResponse

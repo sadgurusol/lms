@@ -79,6 +79,12 @@ Route::post('/v1/webhooks/mux', [MediaWebhookController::class, 'mux']);
 Route::post('/v1/launch', [LaunchController::class, 'launch'])->middleware('throttle:launch');
 Route::post('/v1/auth/launch/exchange', [LaunchController::class, 'exchange'])->middleware('throttle:launch');
 
+// Partner (B2B client) read-only catalogue — client signs a JWT with its launch key.
+Route::middleware('client')->prefix('v1/partner')->group(function () {
+    Route::get('/courses', [\App\Http\Controllers\Api\PartnerCatalogController::class, 'courses']);
+    Route::get('/courses/{code}/content', [\App\Http\Controllers\Api\PartnerCatalogController::class, 'content']);
+});
+
 // B2C direct sign-up and login for the learner app.
 Route::post('/v1/auth/register', [AuthController::class, 'register'])->middleware('throttle:register');
 Route::post('/v1/auth/token', [AuthController::class, 'token'])->middleware('throttle:login');

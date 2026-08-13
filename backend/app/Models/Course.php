@@ -147,4 +147,21 @@ class Course extends Model
     {
         return $this->schemaVersion->rootLevels()->get();
     }
+
+    /**
+     * A stable, unique, human-ish course code derived from a seed (subject/title).
+     * A code is what B2B clients map and launch against, so every deliverable
+     * course needs one.
+     */
+    public static function uniqueCode(?string $seed): string
+    {
+        $base = trim((string) preg_replace('/[^A-Z0-9]+/', '-', strtoupper((string) ($seed ?: 'COURSE'))), '-');
+        $base = substr($base !== '' ? $base : 'COURSE', 0, 20);
+
+        do {
+            $code = $base.'-'.strtoupper(\Illuminate\Support\Str::random(4));
+        } while (self::where('code', $code)->exists());
+
+        return $code;
+    }
 }

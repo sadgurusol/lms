@@ -1,5 +1,7 @@
 import { Head, Link } from '@inertiajs/react';
+import { useState } from 'react';
 import { BlockView, type Block } from '@/studio/components/BlockView';
+import LessonPlayer from '@/studio/components/LessonPlayer';
 
 /* ----------------------------------------------------------------------------
  * A read-only render of a course, from the same snapshot structure that ships to
@@ -30,8 +32,35 @@ type Props = {
     context: Context;
 };
 
+type PlayTarget = { title: string; steps: SnapshotNode[] };
+
+/** Interactive lesson blocks that make a node a "player" step. */
+const INTERACTIVE = ['animated_reveal', 'simulation', 'animation'];
+
+/** A node is a playable lesson when its children are content leaves carrying
+ *  interactive blocks (an animated lesson). Then it plays, not scrolls. */
+function isPlayableLesson(node: SnapshotNode): boolean {
+    return (
+        node.children.length > 0 &&
+        node.children.every((c) => c.children.length === 0 && c.blocks.length > 0) &&
+        node.children.some((c) => c.blocks.some((b) => INTERACTIVE.includes(b.type)))
+    );
+}
+
+/** Flatten every content-bearing node (across lessons) into player steps. */
+function flattenSteps(nodes: SnapshotNode[]): SnapshotNode[] {
+    const out: SnapshotNode[] = [];
+    for (const n of nodes) {
+        if (n.blocks.length > 0) out.push(n);
+        if (n.children.length) out.push(...flattenSteps(n.children));
+    }
+    return out;
+}
+
 export default function CoursePreview({ snapshot, context }: Props) {
     const { course, tree } = snapshot;
+    const [player, setPlayer] = useState<PlayTarget | null>(null);
+    const allSteps = flattenSteps(tree);
 
     const isPublished = context.kind === 'published';
     const badge = isPublished
@@ -61,25 +90,61 @@ export default function CoursePreview({ snapshot, context }: Props) {
 
             <article className="mx-auto max-w-3xl px-6 py-10">
                 <header className="mb-10 border-b border-zinc-200 pb-6 dark:border-zinc-800">
-                    <h1 className="text-3xl font-bold tracking-tight">{course.title}</h1>
-                    <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
-                        {[course.code, course.subject, course.grade_band].filter(Boolean).join(' · ')}
-                    </p>
+                    <div className="flex items-start justify-between gap-4">
+                        <div>
+                            <h1 className="text-3xl font-bold tracking-tight">{course.title}</h1>
+                            <p className="mt-2 text-sm text-zinc-500 dark:text-zinc-400">
+                                {[course.code, course.subject, course.grade_band].filter(Boolean).join(' · ')}
+                            </p>
+                        </div>
+                        {allSteps.length > 0 && (
+                            <button
+                                onClick={() => setPlayer({ title: course.title, steps: allSteps })}
+                                className="shrink-0 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                            >
+                                ▶ Play as learner
+                            </button>
+                        )}
+                    </div>
                 </header>
 
                 {tree.length === 0 ? (
                     <p className="text-zinc-500 dark:text-zinc-400">This course has no content yet.</p>
                 ) : (
-                    tree.map((node) => <NodeSection key={node.id} node={node} depth={0} />)
+                    tree.map((node) => <NodeSection key={node.id} node={node} depth={0} onPlay={setPlayer} />)
                 )}
             </article>
+
+            {player && (
+                <LessonPlayer title={player.title} steps={player.steps} onClose={() => setPlayer(null)} />
+            )}
         </div>
     );
 }
 
-function NodeSection({ node, depth }: { node: SnapshotNode; depth: number }) {
+function NodeSection({ node, depth, onPlay }: { node: SnapshotNode; depth: number; onPlay: (t: PlayTarget) => void }) {
     const Heading = (['h2', 'h3', 'h4', 'h5'][Math.min(depth, 3)] ?? 'h6') as 'h2';
     const size = ['text-2xl', 'text-xl', 'text-lg', 'text-base'][Math.min(depth, 3)];
+
+    // An animated lesson plays as a step player rather than a wall of content.
+    if (isPlayableLesson(node)) {
+        return (
+            <section className={depth > 0 ? 'mt-8 border-l border-zinc-200 pl-5 dark:border-zinc-800' : 'mt-10'}>
+                <div className="flex items-center justify-between gap-3 rounded-lg border border-indigo-200 bg-indigo-50 px-4 py-3 dark:border-indigo-900/50 dark:bg-indigo-950/30">
+                    <div>
+                        <Heading className={`${size} font-semibold tracking-tight`}>{node.label || node.title}</Heading>
+                        <p className="text-sm text-zinc-500 dark:text-zinc-400">{node.children.length} steps</p>
+                    </div>
+                    <button
+                        onClick={() => onPlay({ title: node.label || node.title, steps: node.children })}
+                        className="shrink-0 rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500"
+                    >
+                        ▶ Play lesson
+                    </button>
+                </div>
+            </section>
+        );
+    }
 
     return (
         <section className={depth > 0 ? 'mt-8 border-l border-zinc-200 pl-5 dark:border-zinc-800' : 'mt-10'}>
@@ -96,7 +161,7 @@ function NodeSection({ node, depth }: { node: SnapshotNode; depth: number }) {
             )}
 
             {node.children.map((child) => (
-                <NodeSection key={child.id} node={child} depth={depth + 1} />
+                <NodeSection key={child.id} node={child} depth={depth + 1} onPlay={onPlay} />
             ))}
         </section>
     );

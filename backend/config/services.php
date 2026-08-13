@@ -65,4 +65,16 @@ return [
         'model' => env('VOYAGE_MODEL', 'voyage-3'),
     ],
 
+    // Samchita AI Platform — the shared content engine (interactive lessons,
+    // animated reveals, simulations). LMS is a distinct client (its own key);
+    // preferred for rich lessons, with the direct AnthropicClient as fallback.
+    'ai_platform' => [
+        'enabled' => filter_var(env('AI_PLATFORM_ENABLED', false), FILTER_VALIDATE_BOOL),
+        'url' => env('AI_PLATFORM_URL'),
+        'key' => env('AI_PLATFORM_KEY'),
+        'admin_key' => env('AI_PLATFORM_ADMIN_KEY'),
+        'timeout' => (int) env('AI_PLATFORM_TIMEOUT', 300),
+        'poll_interval' => (float) env('AI_PLATFORM_POLL_INTERVAL', 2),
+    ],
+
 ];

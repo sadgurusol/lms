@@ -4,6 +4,8 @@
  * drift.
  */
 
+import AnimatedRevealPreview, { type Fragment } from './AnimatedRevealPreview';
+
 type Span = { _type: string; text?: string; marks?: string[] };
 type PtBlock = { _type: string; style?: string; listItem?: string; children?: Span[] };
 
@@ -23,6 +25,12 @@ export function BlockView({ block }: { block: Block }) {
             return <Attachment payload={block.payload} />;
         case 'video':
             return <VideoBlock payload={block.payload} />;
+        case 'animated_reveal':
+            return <AnimatedRevealPreview fragments={(block.payload.fragments as Fragment[] | undefined) ?? []} />;
+        case 'simulation':
+            return <SimulationBlock payload={block.payload} />;
+        case 'animation':
+            return <AnimationBlock payload={block.payload} />;
         default:
             return (
                 <div className="rounded-md border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
@@ -30,6 +38,34 @@ export function BlockView({ block }: { block: Block }) {
                 </div>
             );
     }
+}
+
+function SimulationBlock({ payload }: { payload: Record<string, unknown> }) {
+    const url = payload.url as string | undefined;
+    if (!url) return <div className="text-sm text-zinc-500">Simulation unavailable.</div>;
+    return (
+        <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800">
+            <iframe
+                src={url}
+                sandbox="allow-scripts"
+                title={(payload.title as string) ?? 'Interactive simulation'}
+                style={{ width: '100%', aspectRatio: '16 / 10', border: 0, background: '#fff' }}
+            />
+        </div>
+    );
+}
+
+function AnimationBlock({ payload }: { payload: Record<string, unknown> }) {
+    const url = payload.url as string | undefined;
+    if (!url) return <div className="text-sm text-zinc-500">Animation unavailable.</div>;
+    return (
+        <video
+            src={url}
+            poster={payload.poster_url as string | undefined}
+            controls
+            className="w-full rounded-lg bg-black"
+        />
+    );
 }
 
 function formatDuration(seconds: number): string {

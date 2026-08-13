@@ -19,6 +19,7 @@ return Application::configure(basePath: dirname(__DIR__))
         $middleware->alias([
             'client.scope' => EnsureClientScope::class,
             'staff' => EnsureStaff::class,
+            'client' => \App\Http\Middleware\AuthenticateClient::class,
         ]);
 
         // Inertia shares auth state with every studio page.

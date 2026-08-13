@@ -17,6 +17,12 @@ enum BlockType: string
     case Attachment = 'attachment';
     case Embed = 'embed';
     case Callout = 'callout';
+    // Interactive lesson blocks (ai-platform authored). These reference external
+    // URLs in their payload rather than a Media record, so requiredMediaKind()
+    // stays null for them.
+    case Simulation = 'simulation';
+    case Animation = 'animation';
+    case AnimatedReveal = 'animated_reveal';
 
     /** @return list<string> */
     public static function names(): array

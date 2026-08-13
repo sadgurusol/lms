@@ -42,8 +42,10 @@ final class PublishCourse
                 'published_by' => $actor->id,
             ]);
 
+            // Every deliverable course needs a code — clients map/launch by it.
             // forceFill: markDraftDiverged() must not fire and undo this.
             $course->forceFill([
+                'code' => $course->code ?: Course::uniqueCode($course->subject ?: $course->title),
                 'latest_publication_id' => $publication->id,
                 'workflow_state' => Course::STATE_PUBLISHED,
             ])->save();

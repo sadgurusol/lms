@@ -7,6 +7,7 @@ use App\Http\Controllers\Ops\ProductController;
 use App\Http\Controllers\Studio\AssessmentController;
 use App\Http\Controllers\Studio\AssessmentQuestionController;
 use App\Http\Controllers\Studio\ContentBlockController;
+use App\Http\Controllers\Studio\LessonBuilderController;
 use App\Http\Controllers\Studio\CourseController;
 use App\Http\Controllers\Studio\CourseGrantController;
 use App\Http\Controllers\Studio\CourseInsightsController;
@@ -154,6 +155,13 @@ Route::prefix('studio')->name('studio.')->group(function () {
             ->name('content-blocks.move');
         Route::delete('/content-blocks/{block}', [ContentBlockController::class, 'destroy'])
             ->name('content-blocks.destroy');
+
+        // Interactive animated-lesson builder (docs/14 WS3) — JSON, polled by React.
+        Route::get('/course-nodes/{lesson}/lesson-preview', [LessonBuilderController::class, 'preview'])->name('lesson-builder.preview');
+        Route::post('/course-nodes/{lesson}/lesson-builder/next-step', [LessonBuilderController::class, 'nextStep'])->name('lesson-builder.next');
+        Route::post('/course-nodes/{lesson}/lesson-builder/revise-step', [LessonBuilderController::class, 'reviseStep'])->name('lesson-builder.revise');
+        Route::get('/course-nodes/{lesson}/lesson-builder/step-status', [LessonBuilderController::class, 'stepStatus'])->name('lesson-builder.status');
+        Route::post('/course-nodes/{lesson}/lesson-builder/commit', [LessonBuilderController::class, 'commit'])->name('lesson-builder.commit');
 
         // Assessments (quizzes and tests) on a node, and their questions.
         Route::get('/course-nodes/{node}/assessments', [AssessmentController::class, 'index'])
