@@ -1,4 +1,4 @@
-import { Head, Link, router } from '@inertiajs/react';
+import { Head, Link, router, useForm } from '@inertiajs/react';
 import { useState, type FormEvent } from 'react';
 import StudioLayout from '@/studio/components/StudioLayout';
 import { BlockView, type Block } from '@/studio/components/BlockView';
@@ -25,13 +25,16 @@ type Props = {
         id: string;
         title: string;
         code: string | null;
+        subject: string | null;
+        grade_band: string | null;
+        language: string;
         workflow_state: string;
         published_number: number | null;
         schema: { name: string; version: number };
     };
     tree: TreeNode[];
     root_levels: AddLevel[];
-    can: { edit: boolean; revise: boolean };
+    can: { edit: boolean; revise: boolean; delete: boolean };
 };
 
 const only = { preserveScroll: true, preserveState: false } as const;
@@ -81,6 +84,8 @@ export default function CourseShow({ course, tree, root_levels, can }: Props) {
                     </Link>
                 )}
             </div>
+
+            {can.edit && <CourseDetails course={course} canDelete={can.delete} />}
 
             {/* The live published version is always one click away, read-only,
                 whatever state the draft is in. */}
@@ -158,6 +163,143 @@ export default function CourseShow({ course, tree, root_levels, can }: Props) {
                 </div>
             )}
         </StudioLayout>
+    );
+}
+
+/**
+ * The course's own descriptive fields (title, code, subject, …) with an inline
+ * edit form, plus delete for a never-published draft. Structure is edited in the
+ * tree below; this is only the course metadata.
+ */
+function CourseDetails({ course, canDelete }: { course: Props['course']; canDelete: boolean }) {
+    const [editing, setEditing] = useState(false);
+    const confirm = useConfirm();
+
+    async function destroy() {
+        const ok = await confirm({
+            title: 'Delete course',
+            message: (
+                <>
+                    Delete <strong>{course.title}</strong> and all of its content? This cannot be undone.
+                </>
+            ),
+            confirmLabel: 'Delete',
+            danger: true,
+        });
+        if (ok) router.delete(`/studio/courses/${course.id}`);
+    }
+
+    if (editing) return <CourseDetailsForm course={course} onDone={() => setEditing(false)} />;
+
+    return (
+        <div className="mb-6 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-md border border-zinc-200 bg-zinc-50 px-4 py-3 text-sm dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="font-semibold">{course.title}</span>
+                {course.code && (
+                    <code className="rounded bg-zinc-100 px-1.5 py-0.5 text-xs dark:bg-zinc-800">
+                        {course.code}
+                    </code>
+                )}
+                {course.subject && <span className="text-zinc-500 dark:text-zinc-400">{course.subject}</span>}
+                {course.grade_band && (
+                    <span className="text-zinc-500 dark:text-zinc-400">· {course.grade_band}</span>
+                )}
+                <span className="text-zinc-400">· {course.language}</span>
+            </div>
+            <div className="ml-auto flex gap-2">
+                <button
+                    type="button"
+                    onClick={() => setEditing(true)}
+                    className="rounded-md border border-zinc-300 px-3 py-1.5 font-medium text-zinc-700 hover:border-indigo-400 hover:text-indigo-600 dark:border-zinc-700 dark:text-zinc-300"
+                >
+                    Edit details
+                </button>
+                {canDelete && (
+                    <button
+                        type="button"
+                        onClick={() => void destroy()}
+                        className="rounded-md border border-red-300 px-3 py-1.5 font-medium text-red-600 hover:bg-red-50 dark:border-red-900 dark:text-red-400 dark:hover:bg-red-950"
+                    >
+                        Delete course
+                    </button>
+                )}
+            </div>
+        </div>
+    );
+}
+
+function CourseDetailsForm({ course, onDone }: { course: Props['course']; onDone: () => void }) {
+    const { data, setData, transform, patch, processing, errors } = useForm({
+        title: course.title,
+        code: course.code ?? '',
+        subject: course.subject ?? '',
+        grade_band: course.grade_band ?? '',
+        language: course.language,
+    });
+
+    function submit(event: FormEvent) {
+        event.preventDefault();
+        // Empty optional fields go to the server as null, not "".
+        transform((d) => ({
+            ...d,
+            code: d.code.trim() || null,
+            subject: d.subject.trim() || null,
+            grade_band: d.grade_band.trim() || null,
+        }));
+        patch(`/studio/courses/${course.id}`, { onSuccess: onDone });
+    }
+
+    const input =
+        'w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900';
+
+    return (
+        <form
+            onSubmit={submit}
+            className="mb-6 grid max-w-2xl gap-4 rounded-md border border-zinc-200 p-4 dark:border-zinc-800"
+        >
+            <div className="grid grid-cols-2 gap-4">
+                <label className="col-span-2 space-y-1.5">
+                    <span className="block text-sm font-medium">Title</span>
+                    <input autoFocus value={data.title} onChange={(e) => setData('title', e.target.value)} className={input} />
+                    {errors.title && <span className="block text-sm text-red-600">{errors.title}</span>}
+                </label>
+
+                <label className="space-y-1.5">
+                    <span className="block text-sm font-medium">Code</span>
+                    <input value={data.code} onChange={(e) => setData('code', e.target.value)} placeholder="Optional, unique" className={input} />
+                    {errors.code && <span className="block text-sm text-red-600">{errors.code}</span>}
+                </label>
+
+                <label className="space-y-1.5">
+                    <span className="block text-sm font-medium">Language</span>
+                    <input value={data.language} onChange={(e) => setData('language', e.target.value)} placeholder="en" className={input} />
+                    {errors.language && <span className="block text-sm text-red-600">{errors.language}</span>}
+                </label>
+
+                <label className="space-y-1.5">
+                    <span className="block text-sm font-medium">Subject</span>
+                    <input value={data.subject} onChange={(e) => setData('subject', e.target.value)} className={input} />
+                </label>
+
+                <label className="space-y-1.5">
+                    <span className="block text-sm font-medium">Grade band</span>
+                    <input value={data.grade_band} onChange={(e) => setData('grade_band', e.target.value)} className={input} />
+                </label>
+            </div>
+
+            <div className="flex gap-2">
+                <button
+                    type="submit"
+                    disabled={processing || data.title.trim() === '' || data.language.trim() === ''}
+                    className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                >
+                    Save changes
+                </button>
+                <button type="button" onClick={onDone} className="rounded-md px-3 py-2 text-sm">
+                    Cancel
+                </button>
+            </div>
+        </form>
     );
 }
 

@@ -9,6 +9,7 @@ import '../models.dart';
 import '../progress_tracker.dart';
 import '../responsive.dart';
 import '../widgets/block_view.dart';
+import 'lesson_player_screen.dart';
 
 /// Reads a course as a collapsible outline: units, chapters and topics start
 /// folded, and the learner expands the section they want to read. The structure
@@ -141,6 +142,22 @@ class _CourseScreenState extends State<CourseScreen> {
       return depth == 0 ? Card(margin: const EdgeInsets.only(bottom: 10), child: tile) : tile;
     }
 
+    // A lesson whose steps are interactive/animated plays as a step player, not
+    // a stack of content top-to-bottom.
+    if (_isPlayableLesson(node)) {
+      final tile = ListTile(
+        contentPadding: EdgeInsets.only(left: 16.0 + depth * 12, right: 16),
+        leading: const Icon(Icons.play_circle_fill, color: Colors.indigo),
+        title: Text(node.label, style: headingStyle),
+        subtitle: Text('${node.children.length} steps · tap to play'),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => Navigator.of(context).push(MaterialPageRoute(
+          builder: (_) => LessonPlayerScreen(title: node.label, steps: node.children),
+        )),
+      );
+      return depth == 0 ? Card(margin: const EdgeInsets.only(bottom: 10), child: tile) : tile;
+    }
+
     final tile = ExpansionTile(
       key: PageStorageKey(node.id),
       onExpansionChanged: (expanded) => _onExpansion(node, expanded),
@@ -170,6 +187,14 @@ class _CourseScreenState extends State<CourseScreen> {
         ? Card(margin: const EdgeInsets.only(bottom: 10), clipBehavior: Clip.antiAlias, child: tile)
         : tile;
   }
+
+  /// A node is a playable lesson when its children are content steps carrying
+  /// interactive/animated blocks (an animated-lesson from the builder).
+  bool _isPlayableLesson(ContentNode node) =>
+      node.children.isNotEmpty &&
+      node.children.any((c) => c.blocks.any(
+            (b) => b.type == 'animated_reveal' || b.type == 'simulation' || b.type == 'animation',
+          ));
 
   TextStyle? _headingStyle(BuildContext context, int depth) {
     final text = Theme.of(context).textTheme;

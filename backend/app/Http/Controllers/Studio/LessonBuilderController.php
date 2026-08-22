@@ -87,6 +87,26 @@ class LessonBuilderController extends Controller
         return response()->json(['job_id' => $jobId, 'status' => 'queued']);
     }
 
+    /**
+     * Synthesize narration audio for a step's fragment voice lines, without
+     * regenerating the step. Returns { audio_urls: [...] } parallel to the input,
+     * which the builder maps back onto its draft fragments. Synchronous.
+     */
+    public function voice(Request $request, CourseNode $lesson, AiPlatformClient $platform): JsonResponse
+    {
+        $this->authorizeBuild($lesson, $platform);
+
+        $data = $request->validate([
+            'voices' => ['present', 'array', 'max:20'],
+            'voices.*' => ['nullable', 'string', 'max:2000'],
+        ]);
+
+        // Normalise to plain strings so nulls don't upset the platform contract.
+        $texts = array_map(fn ($v) => (string) ($v ?? ''), $data['voices']);
+
+        return response()->json(['audio_urls' => $platform->synthesizeSpeech($texts)]);
+    }
+
     /** Poll a step job. Returns { status, step?, is_last?, error? }. */
     public function stepStatus(Request $request, CourseNode $lesson, AiPlatformClient $platform): JsonResponse
     {

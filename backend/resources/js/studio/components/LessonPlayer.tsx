@@ -25,6 +25,7 @@ export default function LessonPlayer({
     const [error, setError] = useState('');
     const [revealPlaying, setRevealPlaying] = useState(false);
     const revealRef = useRef<RevealHandle>(null);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     useEffect(() => {
         if (stepsProp) {
@@ -45,6 +46,30 @@ export default function LessonPlayer({
         setShowInstructions(false);
         setRevealPlaying(false);
     }, [index]);
+
+    // Play a non-reveal step's narration clip on show (reveals narrate per beat).
+    useEffect(() => {
+        const stop = () => {
+            if (audioRef.current) {
+                audioRef.current.pause();
+                audioRef.current.src = '';
+                audioRef.current = null;
+            }
+        };
+        stop();
+        const s = steps?.[index];
+        if (!s) return stop;
+        const isReveal = s.blocks.some((b) => b.type === 'animated_reveal');
+        const url = isReveal
+            ? undefined
+            : (s.blocks.find((b) => b.type === 'audio')?.payload.url as string | undefined);
+        if (url) {
+            const a = new Audio(url);
+            audioRef.current = a;
+            a.play().catch(() => {});
+        }
+        return stop;
+    }, [steps, index]);
 
     useEffect(() => {
         function onKey(e: KeyboardEvent) {

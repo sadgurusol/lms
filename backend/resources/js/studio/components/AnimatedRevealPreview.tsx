@@ -8,7 +8,7 @@ import {
     type ReactNode,
 } from 'react';
 
-export type Fragment = { md: string; effect?: string; voice?: string; duration_ms?: number };
+export type Fragment = { md: string; effect?: string; voice?: string; audio_url?: string; duration_ms?: number };
 
 /** Imperative control surface so a parent (e.g. the lesson player) can drive
  *  Play/Pause from its own footer instead of the in-card controls. */
@@ -22,18 +22,61 @@ function plainText(md: string): string {
         .trim();
 }
 
-/** Minimal markdown for one beat: #/##/### headings, - bullets, **bold** / *italic*. */
+/** Minimal markdown for one beat, line by line: #/##/### headings, -/* and
+ *  numbered bullets (grouped into a list), paragraphs, **bold** / *italic*. A
+ *  beat is often several lines, so this must not treat the whole string as one. */
 function Md({ md }: { md: string }) {
-    const raw = md.trimEnd();
-    const heading = /^(#{1,3})\s+(.*)$/.exec(raw);
-    if (heading) {
-        const level = (heading[1] ?? '#').length;
-        const cls = ['text-xl font-bold', 'text-lg font-semibold', 'text-base font-semibold'][level - 1] ?? 'text-base font-semibold';
-        return <p className={cls}>{inline(heading[2] ?? '')}</p>;
+    const out: ReactNode[] = [];
+    let bullets: ReactNode[] = [];
+    let k = 0;
+    const flush = () => {
+        if (bullets.length) {
+            out.push(
+                <ul key={`u${k++}`} className="space-y-1">
+                    {bullets}
+                </ul>,
+            );
+            bullets = [];
+        }
+    };
+
+    for (const line of md.replace(/\r/g, '').split('\n')) {
+        const raw = line.trimEnd();
+        if (!raw.trim()) {
+            flush();
+            continue;
+        }
+        const heading = /^(#{1,3})\s+(.*)$/.exec(raw);
+        if (heading) {
+            flush();
+            const level = (heading[1] ?? '#').length;
+            const cls =
+                ['text-xl font-bold', 'text-lg font-semibold', 'text-base font-semibold'][level - 1] ??
+                'text-base font-semibold';
+            out.push(
+                <p key={`h${k++}`} className={cls}>
+                    {inline(heading[2] ?? '')}
+                </p>,
+            );
+            continue;
+        }
+        const bullet = /^\s*(?:[-*]|\d+\.)\s+(.*)$/.exec(raw);
+        if (bullet) {
+            const marker = /^\s*(\d+)\./.exec(raw)?.[1];
+            bullets.push(
+                <li key={`b${k++}`} className="flex gap-2">
+                    <span className="shrink-0">{marker ? `${marker}.` : '•'}</span>
+                    <span>{inline(bullet[1] ?? '')}</span>
+                </li>,
+            );
+            continue;
+        }
+        flush();
+        out.push(<p key={`p${k++}`}>{inline(raw)}</p>);
     }
-    const bullet = /^\s*[-*]\s+(.*)$/.exec(raw);
-    if (bullet) return <p className="flex gap-2"><span>•</span><span>{inline(bullet[1] ?? '')}</span></p>;
-    return <p>{inline(raw)}</p>;
+    flush();
+
+    return <div className="space-y-1.5">{out}</div>;
 }
 
 function inline(text: string): ReactNode[] {
@@ -115,11 +158,23 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
     const [playing, setPlaying] = useState(false);
     const playingRef = useRef(false);
     const gen = useRef(0);
+    // Bumped only on a fresh start/replay so resuming after a pause doesn't
+    // re-mount (and re-animate) the beats that are already on screen.
+    const runId = useRef(0);
+    const audioRef = useRef<HTMLAudioElement | null>(null);
 
     function setPlay(v: boolean) {
         playingRef.current = v;
         setPlaying(v);
         onPlayingChange?.(v);
+    }
+
+    function stopAudio() {
+        if (audioRef.current) {
+            audioRef.current.pause();
+            audioRef.current.src = '';
+            audioRef.current = null;
+        }
     }
 
     function speak(text: string, onEnd: () => void) {
@@ -134,6 +189,28 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
         window.setTimeout(onEnd, Math.max(2500, (text.length / 11) * 1000 + 1500));
     }
 
+    // Narrate one beat: prefer the pre-generated audio file (consistent, natural
+    // voice); fall back to on-device speech only when a fragment has no audio.
+    function narrate(frag: Fragment, onEnd: () => void) {
+        if (frag.audio_url) {
+            stopAudio();
+            const a = new Audio(frag.audio_url);
+            audioRef.current = a;
+            let done = false;
+            const fin = () => {
+                if (done) return;
+                done = true;
+                onEnd();
+            };
+            a.addEventListener('ended', fin);
+            a.addEventListener('error', fin);
+            a.play().catch(() => {});
+            window.setTimeout(fin, 60000); // ultimate fallback if it stalls
+            return;
+        }
+        speak(frag.voice ?? '', onEnd);
+    }
+
     function reveal(i: number, myGen: number) {
         if (myGen !== gen.current) return;
         if (i >= fragments.length) {
@@ -142,7 +219,7 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
         }
         setRevealed(i);
         let advanced = false;
-        speak(fragments[i]?.voice ?? '', () => {
+        narrate(fragments[i] ?? { md: '' }, () => {
             if (myGen !== gen.current || advanced) return;
             advanced = true;
             reveal(i + 1, myGen);
@@ -151,16 +228,28 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
 
     function start() {
         window.speechSynthesis?.cancel();
+        stopAudio();
+        runId.current++;
         const myGen = ++gen.current;
         setRevealed(-1);
         setPlay(true);
         reveal(0, myGen);
     }
 
+    // Pause: hold the current beat (keeps `revealed`), just stop the narration.
     function stop() {
         gen.current++;
         window.speechSynthesis?.cancel();
+        stopAudio();
         setPlay(false);
+    }
+
+    // Resume from the current beat (re-narrates it) — not from the beginning.
+    function resume() {
+        if (revealed < 0) return start();
+        const myGen = ++gen.current;
+        setPlay(true);
+        reveal(revealed, myGen);
     }
 
     function revealAll() {
@@ -169,7 +258,10 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
     }
 
     useImperativeHandle(ref, () => ({
-        toggle: () => (playingRef.current ? stop() : start()),
+        // Play/pause from the parent's footer: pause holds, play resumes, and a
+        // finished reveal replays from the top.
+        toggle: () =>
+            playingRef.current ? stop() : revealed >= fragments.length - 1 ? start() : resume(),
         restart: () => start(),
         isPlaying: () => playingRef.current,
     }));
@@ -179,6 +271,7 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
         return () => {
             gen.current++;
             window.speechSynthesis?.cancel();
+            stopAudio();
         };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
@@ -187,7 +280,7 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
         <div className="space-y-3">
             {fragments.map((f, i) =>
                 i <= revealed ? (
-                    <Beat key={`${gen.current}-${i}`} frag={f} typing={f.effect === 'typewriter' && i === revealed && playing} />
+                    <Beat key={`${runId.current}-${i}`} frag={f} typing={f.effect === 'typewriter' && i === revealed && playing} />
                 ) : null,
             )}
             {revealed < 0 && !bare && <p className="text-sm text-zinc-500">Press play to preview the reveal.</p>}
@@ -202,10 +295,10 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
             <div className="mt-4 flex items-center gap-2">
                 <button
                     type="button"
-                    onClick={playing ? stop : start}
+                    onClick={playing ? stop : revealed >= fragments.length - 1 ? start : resume}
                     className="rounded-md bg-indigo-600 px-3 py-1.5 text-sm font-medium text-white hover:bg-indigo-500"
                 >
-                    {playing ? 'Pause' : revealed >= fragments.length - 1 ? 'Replay' : 'Play'}
+                    {playing ? 'Pause' : revealed >= fragments.length - 1 ? 'Replay' : revealed < 0 ? 'Play' : 'Resume'}
                 </button>
                 <div className="flex flex-1 gap-1">
                     {fragments.map((_, i) => (

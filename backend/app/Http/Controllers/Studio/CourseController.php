@@ -96,6 +96,9 @@ class CourseController extends Controller
                 'id' => $course->id,
                 'title' => $course->title,
                 'code' => $course->code,
+                'subject' => $course->subject,
+                'grade_band' => $course->grade_band,
+                'language' => $course->language,
                 'workflow_state' => $course->workflow_state,
                 // The version learners currently see, if any.
                 'published_number' => $course->latestPublication?->number,
@@ -112,6 +115,10 @@ class CourseController extends Controller
                 'edit' => $editable,
                 // A published course can be reopened as a new draft version.
                 'revise' => $mayEdit && $course->workflow_state === Course::STATE_PUBLISHED,
+                // Only a never-published draft may be deleted outright.
+                'delete' => Gate::allows('delete', $course)
+                    && $course->workflow_state === Course::STATE_DRAFT
+                    && $course->latestPublication === null,
             ],
         ]);
     }
@@ -192,6 +199,55 @@ class CourseController extends Controller
         }
 
         return back()->with('success', "Created “{$course->title}”. Add its content next.");
+    }
+
+    /**
+     * Edit a draft course's metadata (title, code, subject, …). The structure —
+     * schema version, nodes, blocks — is edited elsewhere; this is only the
+     * course's own descriptive fields, and only while it is still editable.
+     */
+    public function update(Request $request, Course $course): RedirectResponse
+    {
+        Gate::authorize('update', $course);
+        abort_unless(
+            $course->isEditable(),
+            403,
+            'A published course is read-only — revise it into a new draft first.'
+        );
+
+        $data = $request->validate([
+            'title' => ['required', 'string', 'max:200'],
+            // Ignore this course's own row so re-saving an unchanged code passes.
+            'code' => ['nullable', 'string', 'max:40', Rule::unique('courses', 'code')->ignore($course->id)],
+            'subject' => ['nullable', 'string', 'max:80'],
+            'grade_band' => ['nullable', 'string', 'max:40'],
+            'language' => ['required', 'string', 'max:10'],
+        ]);
+
+        $course->update($data);
+
+        return back()->with('success', 'Course details updated.');
+    }
+
+    /**
+     * Delete a draft course. Restricted to a never-published draft: a course with
+     * a live publication is being consumed by learners through its snapshots, and
+     * anything past draft goes through withdraw/archive instead. Soft-deletes, so
+     * it is recoverable and never orphans a snapshot.
+     */
+    public function destroy(Request $request, Course $course): RedirectResponse
+    {
+        Gate::authorize('delete', $course);
+        abort_unless(
+            $course->workflow_state === Course::STATE_DRAFT && $course->latestPublication === null,
+            403,
+            'Only an unpublished draft course can be deleted.'
+        );
+
+        $title = $course->title;
+        $course->delete();
+
+        return redirect('/studio/courses')->with('success', "Deleted “{$title}”.");
     }
 
     /**

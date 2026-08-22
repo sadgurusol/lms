@@ -177,6 +177,26 @@ class AiPlatformClient
         return (string) ($step['title'] ?? '');
     }
 
+    /**
+     * Synthesize narration audio for a list of text snippets (typically a step's
+     * fragment voice lines). Returns a parallel list of stored MP3 URLs (null
+     * where empty or synthesis failed). Synchronous — used by the lesson builder
+     * to (re)generate voice without regenerating the step.
+     *
+     * @param  list<string>  $texts
+     * @return list<?string>
+     */
+    public function synthesizeSpeech(array $texts): array
+    {
+        $res = $this->http()->post($this->url('/v1/lessons/speech'), ['texts' => array_values($texts)]);
+
+        if (! $res->successful()) {
+            throw new RuntimeException('AI Platform speech failed ('.$res->status().'): '.$res->body());
+        }
+
+        return $res->json('audio_urls') ?? [];
+    }
+
     private function enqueue(array $payload, string $path): string
     {
         $res = $this->http()->post($this->url($path), $payload);

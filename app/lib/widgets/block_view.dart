@@ -4,6 +4,8 @@ import 'package:video_player/video_player.dart';
 
 import '../api_client.dart';
 import '../models.dart';
+import 'animated_reveal_block.dart';
+import 'simulation_block.dart';
 
 /// Read-only rendering of a content block — the Flutter counterpart of the
 /// studio's BlockView. Same content, same shape, different toolkit.
@@ -27,6 +29,18 @@ class BlockView extends StatelessWidget {
         return _Attachment(payload: block.payload);
       case 'video':
         return _Video(payload: block.payload);
+      case 'animated_reveal':
+        return AnimatedRevealBlock(payload: block.payload);
+      case 'simulation':
+        return SimulationBlock(payload: block.payload);
+      case 'animation':
+        // A generated animation is an mp4; reuse the video renderer's controls.
+        return _Video(payload: {
+          'src': block.payload['url'],
+          'poster': block.payload['poster_url'],
+        });
+      case 'audio':
+        return _Narration(payload: block.payload);
       default:
         return _Placeholder(label: '[${block.type} block]');
     }
@@ -365,6 +379,28 @@ class _Embed extends StatelessWidget {
         title: Text(title ?? '$provider content'),
         subtitle: Text(url, maxLines: 1, overflow: TextOverflow.ellipsis),
       ),
+    );
+  }
+}
+
+/// Step narration: the player auto-plays the clip, so here we just surface the
+/// transcript (with a speaker cue) for readers/accessibility.
+class _Narration extends StatelessWidget {
+  const _Narration({required this.payload});
+
+  final Map<String, dynamic> payload;
+
+  @override
+  Widget build(BuildContext context) {
+    final transcript = (payload['transcript'] as String?)?.trim() ?? '';
+    if (transcript.isEmpty) return const SizedBox.shrink();
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.volume_up_outlined, size: 18, color: Theme.of(context).hintColor),
+        const SizedBox(width: 8),
+        Expanded(child: Text(transcript, style: TextStyle(color: Theme.of(context).hintColor))),
+      ],
     );
   }
 }

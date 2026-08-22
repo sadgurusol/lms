@@ -26,15 +26,19 @@ function reconstructNative(s: { title: string; blocks: Block[] }): Step {
     const sim = s.blocks.find((b) => b.type === 'simulation');
     const anim = s.blocks.find((b) => b.type === 'animation');
     const rich = s.blocks.find((b) => b.type === 'rich_text');
+    const audio = s.blocks.find((b) => b.type === 'audio');
     const blocks: Array<Record<string, unknown>> = [];
     if (sim) blocks.push({ type: 'simulation', embed_url: sim.payload.url });
     if (anim) blocks.push({ type: 'animation', url: anim.payload.url });
     if (!reveal && rich) blocks.push({ type: 'text', markdown: portableToText(rich.payload.body) });
-    const voice = (reveal?.payload.voice_script as string) ?? '';
+    // Narration: from the reveal (per-step voice_script) or, for a non-reveal
+    // step, from its audio block (transcript + pre-generated clip).
+    const voice = (reveal?.payload.voice_script as string) ?? (audio?.payload.transcript as string) ?? '';
     return {
         step_type: 'concept',
         title: s.title,
         voice_script: voice,
+        audio_url: reveal ? undefined : (audio?.payload.url as string | undefined),
         blocks,
         animation: reveal ? { fragments: (reveal.payload.fragments as Fragment[]) ?? [], voice_script: voice } : null,
     };
@@ -45,6 +49,8 @@ type Step = {
     step_type?: string;
     title?: string;
     voice_script?: string;
+    // Step-level narration clip (non-reveal steps; reveals narrate per fragment).
+    audio_url?: string;
     blocks?: Array<Record<string, unknown>>;
     animation?: { fragments?: Fragment[]; voice_script?: string } | null;
 };
@@ -111,6 +117,7 @@ export default function LessonBuilder({
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState('');
     const [previewKey, setPreviewKey] = useState(0);
+    const [voiceBusy, setVoiceBusy] = useState(false);
 
     const base = `/studio/course-nodes/${lessonNodeId}/lesson-builder`;
 
@@ -250,6 +257,51 @@ export default function LessonBuilder({
     }
 
     const draftFrags = draft?.animation?.fragments ?? [];
+    const voicedCount = draftFrags.filter((f) => !!f.audio_url).length;
+    const allVoiced = draftFrags.length > 0 && voicedCount === draftFrags.length;
+
+    /** Edit one beat's narration text. Editing invalidates its generated clip. */
+    function setFragVoice(i: number, text: string) {
+        if (!draft) return;
+        const frags = [...(draft.animation?.fragments ?? [])];
+        frags[i] = { ...frags[i], voice: text, audio_url: undefined };
+        setDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: frags } });
+    }
+
+    /** Edit a non-reveal step's narration. Editing invalidates its clip. */
+    function setStepVoice(text: string) {
+        if (!draft) return;
+        setDraft({ ...draft, voice_script: text, audio_url: undefined });
+    }
+
+    /** (Re)generate narration audio only — no step rerun. Handles a reveal (one
+     *  clip per beat) or a plain/media step (one clip for the whole step). */
+    async function generateVoice() {
+        if (!draft) return;
+        const frags = draft.animation?.fragments ?? [];
+        setVoiceBusy(true);
+        setError('');
+        try {
+            if (frags.length > 0) {
+                const voices = frags.map((f) => (f.voice ?? '').trim());
+                const d = await api(`${base}/voice`, 'POST', { voices });
+                const urls = (d.audio_urls as Array<string | null>) ?? [];
+                const next = frags.map((f, i) => ({ ...f, audio_url: urls[i] ?? f.audio_url }));
+                setDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: next } });
+            } else {
+                const text = (draft.voice_script ?? '').trim();
+                if (!text) return;
+                const d = await api(`${base}/voice`, 'POST', { voices: [text] });
+                const urls = (d.audio_urls as Array<string | null>) ?? [];
+                setDraft({ ...draft, audio_url: urls[0] ?? undefined });
+            }
+            setPreviewKey((k) => k + 1); // replay the preview with the new audio
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setVoiceBusy(false);
+        }
+    }
 
     return (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
@@ -370,6 +422,75 @@ export default function LessonBuilder({
                                     ) : (
                                         <div className="whitespace-pre-wrap rounded-lg border border-zinc-200 bg-white p-4 text-sm dark:border-zinc-800 dark:bg-zinc-900">
                                             {stepText(draft) || 'No preview text.'}
+                                        </div>
+                                    )}
+
+                                    {/* Narration: review/edit the voice text, then generate audio for
+                                        the beats only — no need to regenerate the whole step. */}
+                                    {draftFrags.length > 0 && (
+                                        <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">Narration</span>
+                                                    <span className="text-[10px] text-zinc-500">{voicedCount}/{draftFrags.length} voiced</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => void generateVoice()}
+                                                    disabled={voiceBusy}
+                                                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                                                >
+                                                    {voiceBusy ? 'Generating voice…' : allVoiced ? '🔊 Regenerate voice' : '🔊 Generate voice'}
+                                                </button>
+                                            </div>
+                                            <div className="max-h-56 space-y-2 overflow-y-auto p-3">
+                                                {draftFrags.map((f, i) => (
+                                                    <div key={i} className="flex items-start gap-2">
+                                                        <span className="mt-2 w-4 shrink-0 text-right font-mono text-[10px] text-zinc-400">{i + 1}</span>
+                                                        <textarea
+                                                            value={f.voice ?? ''}
+                                                            onChange={(e) => setFragVoice(i, e.target.value)}
+                                                            rows={2}
+                                                            placeholder="Narration for this beat…"
+                                                            className="flex-1 resize-none rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                                                        />
+                                                        <span
+                                                            title={f.audio_url ? 'Voice ready' : 'No audio yet — plays with device voice until generated'}
+                                                            className={`mt-2 shrink-0 text-xs ${f.audio_url ? 'text-green-600 dark:text-green-400' : 'text-zinc-300 dark:text-zinc-600'}`}
+                                                        >
+                                                            ●
+                                                        </span>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* Non-reveal step: one narration for the whole step. */}
+                                    {draft && draftFrags.length === 0 && (
+                                        <div className="mt-4 rounded-lg border border-zinc-200 dark:border-zinc-800">
+                                            <div className="flex items-center justify-between border-b border-zinc-200 px-3 py-2 dark:border-zinc-800">
+                                                <div className="flex items-center gap-2">
+                                                    <span className="text-xs font-medium text-zinc-700 dark:text-zinc-200">Narration</span>
+                                                    <span className="text-[10px] text-zinc-500">{draft.audio_url ? 'voice ready' : 'no audio yet'}</span>
+                                                </div>
+                                                <button
+                                                    onClick={() => void generateVoice()}
+                                                    disabled={voiceBusy || !(draft.voice_script ?? '').trim()}
+                                                    className="rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
+                                                >
+                                                    {voiceBusy ? 'Generating voice…' : draft.audio_url ? '🔊 Regenerate voice' : '🔊 Generate voice'}
+                                                </button>
+                                            </div>
+                                            <div className="p-3">
+                                                <textarea
+                                                    value={draft.voice_script ?? ''}
+                                                    onChange={(e) => setStepVoice(e.target.value)}
+                                                    rows={3}
+                                                    placeholder="Narration for this step…"
+                                                    className="w-full resize-none rounded-md border border-zinc-300 bg-white px-2 py-1.5 text-xs dark:border-zinc-700 dark:bg-zinc-900"
+                                                />
+                                                {draft.audio_url && <audio src={draft.audio_url} controls className="mt-2 w-full" />}
+                                            </div>
                                         </div>
                                     )}
 

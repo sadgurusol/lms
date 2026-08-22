@@ -31,6 +31,8 @@ export function BlockView({ block }: { block: Block }) {
             return <SimulationBlock payload={block.payload} />;
         case 'animation':
             return <AnimationBlock payload={block.payload} />;
+        case 'audio':
+            return <AudioBlock payload={block.payload} />;
         default:
             return (
                 <div className="rounded-md border border-dashed border-zinc-300 p-4 text-sm text-zinc-500 dark:border-zinc-700 dark:text-zinc-400">
@@ -51,6 +53,22 @@ function SimulationBlock({ payload }: { payload: Record<string, unknown> }) {
                 title={(payload.title as string) ?? 'Interactive simulation'}
                 style={{ width: '100%', aspectRatio: '16 / 10', border: 0, background: '#fff' }}
             />
+        </div>
+    );
+}
+
+function AudioBlock({ payload }: { payload: Record<string, unknown> }) {
+    const url = payload.url as string | undefined;
+    const transcript = payload.transcript as string | undefined;
+    return (
+        <div className="rounded-lg border border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-900">
+            <div className="mb-1 flex items-center gap-1.5 text-xs font-medium text-zinc-500">🔊 Narration</div>
+            {url ? (
+                <audio src={url} controls className="w-full" />
+            ) : (
+                <p className="text-xs text-zinc-400">No audio yet — plays with device voice.</p>
+            )}
+            {transcript && <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-300">{transcript}</p>}
         </div>
     );
 }

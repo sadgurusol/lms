@@ -43,6 +43,7 @@ final class BlockEditor
         BlockType::AnimatedReveal->value,
         BlockType::Simulation->value,
         BlockType::Animation->value,
+        BlockType::Audio->value,
     ];
 
     /** Append a new block to the end of the node — the meaning of "add block". */

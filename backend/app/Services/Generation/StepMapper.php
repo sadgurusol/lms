@@ -64,6 +64,30 @@ final class StepMapper
             }
         }
 
+        // Step-level narration. An animated reveal already narrates per fragment,
+        // so this only applies to non-reveal steps (media/text). The audio may
+        // arrive as a top-level `audio_url` (builder "generate voice") or as an
+        // `audio` block from the platform's batch generation. We keep the
+        // transcript too, so a player without the clip can still speak it.
+        if ($animation === null) {
+            $audioUrl = trim((string) ($step['audio_url'] ?? ''));
+            if ($audioUrl === '') {
+                foreach ($blocks as $b) {
+                    if (is_array($b) && ($b['type'] ?? null) === 'audio' && ! empty($b['url'])) {
+                        $audioUrl = trim((string) $b['url']);
+                        break;
+                    }
+                }
+            }
+            $transcript = trim((string) ($step['voice_script'] ?? ''));
+            if ($audioUrl !== '' || $transcript !== '') {
+                $out[] = ['type' => BlockType::Audio->value, 'payload' => array_filter([
+                    'url' => $audioUrl ?: null,
+                    'transcript' => $transcript ?: null,
+                ], fn ($v) => $v !== null)];
+            }
+        }
+
         return $out;
     }
 
@@ -112,6 +136,9 @@ final class StepMapper
                 'md' => $md,
                 'effect' => $effect,
                 'voice' => trim((string) ($f['voice'] ?? '')) ?: null,
+                // Pre-generated narration audio (mp3). Players prefer it over
+                // on-device speech synthesis when present.
+                'audio_url' => trim((string) ($f['audio_url'] ?? '')) ?: null,
                 'duration_ms' => max(100, min($duration, 6000)),
             ], fn ($v) => $v !== null);
         }

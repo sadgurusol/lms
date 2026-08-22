@@ -23,6 +23,8 @@ enum BlockType: string
     case Simulation = 'simulation';
     case Animation = 'animation';
     case AnimatedReveal = 'animated_reveal';
+    // Step-level narration: a pre-generated voice-over clip (url) + its transcript.
+    case Audio = 'audio';
 
     /** @return list<string> */
     public static function names(): array

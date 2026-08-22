@@ -30,6 +30,7 @@ type Props = {
 
 export default function SchemaShow({ schema, version, levels, options, courses_bound, can }: Props) {
     const [addingUnder, setAddingUnder] = useState<string | null | undefined>(undefined);
+    const [editingLevel, setEditingLevel] = useState<Level | null>(null);
 
     const roots = levels.filter((l) => l.parent_level_id === null);
 
@@ -56,7 +57,14 @@ export default function SchemaShow({ schema, version, levels, options, courses_b
                                 levels={levels}
                                 options={options}
                                 editable={can.update}
-                                onAddChild={setAddingUnder}
+                                onAddChild={(id) => {
+                                    setEditingLevel(null);
+                                    setAddingUnder(id);
+                                }}
+                                onEdit={(level) => {
+                                    setAddingUnder(undefined);
+                                    setEditingLevel(level);
+                                }}
                             />
                         ))}
                     </ul>
@@ -75,11 +83,24 @@ export default function SchemaShow({ schema, version, levels, options, courses_b
 
             {addingUnder !== undefined && can.update && (
                 <LevelForm
+                    key="add"
                     versionId={version.id}
                     parentLevelId={addingUnder}
                     parentName={levels.find((l) => l.id === addingUnder)?.name ?? null}
                     options={options}
                     onClose={() => setAddingUnder(undefined)}
+                />
+            )}
+
+            {editingLevel && can.update && (
+                <LevelForm
+                    key={editingLevel.id}
+                    versionId={version.id}
+                    parentLevelId={editingLevel.parent_level_id}
+                    parentName={null}
+                    level={editingLevel}
+                    options={options}
+                    onClose={() => setEditingLevel(null)}
                 />
             )}
         </StudioLayout>
@@ -149,18 +170,20 @@ function LevelBranch({
     options,
     editable,
     onAddChild,
+    onEdit,
 }: {
     level: Level;
     levels: Level[];
     options: Props['options'];
     editable: boolean;
     onAddChild: (parentId: string) => void;
+    onEdit: (level: Level) => void;
 }) {
     const children = levels.filter((l) => l.parent_level_id === level.id);
 
     return (
         <li>
-            <LevelCard level={level} options={options} editable={editable} onAddChild={onAddChild} />
+            <LevelCard level={level} options={options} editable={editable} onAddChild={onAddChild} onEdit={onEdit} />
 
             {children.length > 0 && (
                 <ul className="mt-2 space-y-2 border-l border-zinc-200 pl-6 dark:border-zinc-800">
@@ -172,6 +195,7 @@ function LevelBranch({
                             options={options}
                             editable={editable}
                             onAddChild={onAddChild}
+                            onEdit={onEdit}
                         />
                     ))}
                 </ul>
@@ -185,11 +209,13 @@ function LevelCard({
     options,
     editable,
     onAddChild,
+    onEdit,
 }: {
     level: Level;
     options: Props['options'];
     editable: boolean;
     onAddChild: (parentId: string) => void;
+    onEdit: (level: Level) => void;
 }) {
     const confirm = useConfirm();
 
@@ -256,6 +282,13 @@ function LevelCard({
                         </button>
                         <button
                             type="button"
+                            onClick={() => onEdit(level)}
+                            className="text-xs font-medium text-zinc-600 hover:underline dark:text-zinc-300"
+                        >
+                            Edit
+                        </button>
+                        <button
+                            type="button"
                             onClick={() => void remove()}
                             className="text-xs font-medium text-red-600 hover:underline"
                         >
@@ -272,31 +305,37 @@ function LevelForm({
     versionId,
     parentLevelId,
     parentName,
+    level,
     options,
     onClose,
 }: {
     versionId: string;
     parentLevelId: string | null;
     parentName: string | null;
+    level?: Level;
     options: Props['options'];
     onClose: () => void;
 }) {
-    const { data, setData, post, processing, errors } = useForm({
-        parent_level_id: parentLevelId,
-        name: '',
-        plural_name: '',
-        min_occurrences: 1,
-        max_occurrences: null as number | null,
-        allows_content: false,
-        allowed_block_types: [] as string[],
-        allows_assessment: false,
-        numbering_style: 'numeric',
-        label_template: '{n}. {title}',
+    const editing = level !== undefined;
+    const { data, setData, post, patch, processing, errors } = useForm({
+        // parent_level_id is fixed once a level exists — the server ignores it on
+        // update — but is still sent so the create path has it.
+        parent_level_id: level?.parent_level_id ?? parentLevelId,
+        name: level?.name ?? '',
+        plural_name: level?.plural_name ?? '',
+        min_occurrences: level?.min_occurrences ?? 1,
+        max_occurrences: (level?.max_occurrences ?? null) as number | null,
+        allows_content: level?.allows_content ?? false,
+        allowed_block_types: (level?.allowed_block_types ?? []) as string[],
+        allows_assessment: level?.allows_assessment ?? false,
+        numbering_style: level?.numbering_style ?? 'numeric',
+        label_template: level?.label_template ?? '{n}. {title}',
     });
 
     function submit(event: FormEvent) {
         event.preventDefault();
-        post(`/studio/schema-versions/${versionId}/levels`, { onSuccess: onClose });
+        if (editing) patch(`/studio/schema-levels/${level.id}`, { onSuccess: onClose });
+        else post(`/studio/schema-versions/${versionId}/levels`, { onSuccess: onClose });
     }
 
     function toggleBlockType(type: string) {
@@ -314,7 +353,11 @@ function LevelForm({
             className="mt-6 max-w-2xl space-y-4 rounded-lg border border-zinc-200 p-4 dark:border-zinc-800"
         >
             <h2 className="font-medium">
-                {parentName ? `New level under ${parentName}` : 'New root level'}
+                {editing
+                    ? `Edit ${level.name}`
+                    : parentName
+                      ? `New level under ${parentName}`
+                      : 'New root level'}
             </h2>
 
             <div className="grid grid-cols-2 gap-4">
@@ -436,7 +479,7 @@ function LevelForm({
                     disabled={processing}
                     className="rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50"
                 >
-                    Add level
+                    {editing ? 'Save changes' : 'Add level'}
                 </button>
                 <button type="button" onClick={onClose} className="rounded-md px-3 py-2 text-sm">
                     Cancel

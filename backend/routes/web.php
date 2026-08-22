@@ -85,6 +85,8 @@ Route::prefix('studio')->name('studio.')->group(function () {
         Route::get('/courses', [CourseController::class, 'index'])->name('courses.index');
         Route::post('/courses', [CourseController::class, 'store'])->name('courses.store');
         Route::get('/courses/{course}', [CourseController::class, 'show'])->name('courses.show');
+        Route::patch('/courses/{course}', [CourseController::class, 'update'])->name('courses.update');
+        Route::delete('/courses/{course}', [CourseController::class, 'destroy'])->name('courses.destroy');
         Route::get('/courses/{course}/preview', [CourseController::class, 'preview'])
             ->name('courses.preview');
         Route::get('/courses/{course}/published', [CourseController::class, 'published'])
@@ -160,6 +162,7 @@ Route::prefix('studio')->name('studio.')->group(function () {
         Route::get('/course-nodes/{lesson}/lesson-preview', [LessonBuilderController::class, 'preview'])->name('lesson-builder.preview');
         Route::post('/course-nodes/{lesson}/lesson-builder/next-step', [LessonBuilderController::class, 'nextStep'])->name('lesson-builder.next');
         Route::post('/course-nodes/{lesson}/lesson-builder/revise-step', [LessonBuilderController::class, 'reviseStep'])->name('lesson-builder.revise');
+        Route::post('/course-nodes/{lesson}/lesson-builder/voice', [LessonBuilderController::class, 'voice'])->name('lesson-builder.voice');
         Route::get('/course-nodes/{lesson}/lesson-builder/step-status', [LessonBuilderController::class, 'stepStatus'])->name('lesson-builder.status');
         Route::post('/course-nodes/{lesson}/lesson-builder/commit', [LessonBuilderController::class, 'commit'])->name('lesson-builder.commit');
 
