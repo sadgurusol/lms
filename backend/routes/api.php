@@ -19,12 +19,28 @@ use App\Http\Controllers\Api\SearchController;
 use App\Http\Controllers\Api\SubscriptionController;
 use App\Http\Controllers\Api\TutorController;
 use App\Http\Controllers\Api\WebhookController;
+use App\Http\Controllers\Portal\CatalogController as PortalCatalogController;
+use App\Http\Controllers\Portal\CourseController as PortalCourseController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
 Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
+
+// ─── Public learning portal (no auth) ───────────────────────────────────
+// Published courses anyone can browse and learn without signing in. Which
+// courses are public is decided by App\Portal\CourseGate (Phase 1: any
+// published course). Snapshots are ETag'd, so these are cache-friendly.
+Route::middleware('throttle:public')->prefix('v1/portal')->group(function () {
+    Route::get('/courses', [PortalCatalogController::class, 'index']);
+    Route::get('/categories', [PortalCatalogController::class, 'categories']);
+    Route::get('/courses/{course:slug}', [PortalCourseController::class, 'show']);
+    Route::get('/courses/{course:slug}/content', [PortalCourseController::class, 'content']);
+    // Public streaming of self-hosted course video (Mux plays from its own CDN).
+    Route::get('/media/{media}/stream', [\App\Http\Controllers\Portal\MediaController::class, 'stream'])
+        ->name('portal.media.stream');
+});
 
 Route::middleware('auth:sanctum')->prefix('v1')->group(function () {
     Route::get('/me/dashboard', [DashboardController::class, 'index']);

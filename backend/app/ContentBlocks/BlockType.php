@@ -23,6 +23,9 @@ enum BlockType: string
     case Simulation = 'simulation';
     case Animation = 'animation';
     case AnimatedReveal = 'animated_reveal';
+    // A self-contained inline SVG diagram (geometry, graphs, flowcharts). No
+    // Media record; rendered script-inert (studio <img>, Flutter SvgPicture).
+    case Diagram = 'diagram';
     // Step-level narration: a pre-generated voice-over clip (url) + its transcript.
     case Audio = 'audio';
 

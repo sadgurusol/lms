@@ -15,8 +15,9 @@ use App\ContentBlocks\BlockType;
  *     the teaching text); otherwise the text/formula blocks become one
  *     `rich_text` block;
  *   - every simulation/animation block is added as its own block.
- *   - platform `image` blocks are skipped for now — an LMS `image` block needs a
- *     Media record; ingesting platform images into Media is a later task.
+ *   - a platform `image` block becomes an `image` spec carrying its source URL
+ *     (`src`); {@see LessonExpander} ingests that into a Media record (via
+ *     {@see ImageIngestor}) and attaches the real `image` block.
  */
 final class StepMapper
 {
@@ -61,6 +62,24 @@ final class StepMapper
                 ], fn ($v) => $v !== null)];
             } elseif ($type === 'animation' && ! empty($b['url'])) {
                 $out[] = ['type' => BlockType::Animation->value, 'payload' => ['url' => (string) $b['url']]];
+            } elseif ($type === 'diagram' && ($svg = $this->content->cleanSvg((string) ($b['svg'] ?? ''))) !== null) {
+                // Model-authored inline SVG. Self-contained (no Media record) —
+                // attach directly; the diagram schema validates it on save.
+                $out[] = ['type' => BlockType::Diagram->value, 'payload' => array_filter([
+                    'format' => 'svg',
+                    'svg' => $svg,
+                    'alt' => trim((string) ($b['alt'] ?? $step['title'] ?? '')) ?: 'Diagram',
+                    'caption' => trim((string) ($b['caption'] ?? '')) ?: null,
+                ], fn ($v) => $v !== null)];
+            } elseif ($type === 'image' && ($src = $this->imageSource($b)) !== null) {
+                // Not yet a valid image-block payload — it needs a Media record.
+                // `src` is an ingestion request the caller (LessonExpander)
+                // resolves into a media_id before attaching the block.
+                $out[] = ['type' => BlockType::Image->value, 'payload' => array_filter([
+                    'src' => $src,
+                    'alt' => trim((string) ($b['alt'] ?? $b['caption'] ?? $step['title'] ?? '')) ?: 'Illustration',
+                    'caption' => trim((string) ($b['caption'] ?? '')) ?: null,
+                ], fn ($v) => $v !== null)];
             }
         }
 
@@ -89,6 +108,24 @@ final class StepMapper
         }
 
         return $out;
+    }
+
+    /**
+     * The image source from a platform image block: a hosted URL or an inline
+     * data: URI. Tolerant of the field name the platform uses.
+     *
+     * @param  array<string, mixed>  $b
+     */
+    private function imageSource(array $b): ?string
+    {
+        foreach (['url', 'src', 'image_url', 'data'] as $key) {
+            $value = trim((string) ($b[$key] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /** Flatten text + formula blocks into lightly-marked text for Portable Text. */
@@ -132,6 +169,9 @@ final class StepMapper
             }
             $effect = in_array($f['effect'] ?? null, self::EFFECTS, true) ? $f['effect'] : 'fade';
             $duration = (int) ($f['duration_ms'] ?? 500);
+            // Per-beat visual: an inline SVG (re-sanitized) and/or an image/gif URL,
+            // revealed with the beat.
+            $svg = $this->content->cleanSvg((string) ($f['svg'] ?? ''));
             $fragments[] = array_filter([
                 'md' => $md,
                 'effect' => $effect,
@@ -139,6 +179,9 @@ final class StepMapper
                 // Pre-generated narration audio (mp3). Players prefer it over
                 // on-device speech synthesis when present.
                 'audio_url' => trim((string) ($f['audio_url'] ?? '')) ?: null,
+                'svg' => $svg,
+                'image_url' => trim((string) ($f['image_url'] ?? '')) ?: null,
+                'alt' => trim((string) ($f['alt'] ?? '')) ?: null,
                 'duration_ms' => max(100, min($duration, 6000)),
             ], fn ($v) => $v !== null);
         }

@@ -41,15 +41,30 @@ plain-text rules). Admins add **house-style guidance** (`GenerationSettings`,
 stored in `app_settings`) that is appended to the outline and content prompts —
 depth, tone, and especially how to handle figures. Gated on `course.create`.
 
-## Images
+## Visuals — images and diagrams
 
-The model produces **text only** — it cannot render or insert real images, and
-no image-generation service is wired up. So the content prompt tells it to
-**describe any figure/diagram/shape fully in words** and never write "see Figure
-1" for a picture the learner can't see. If you want real images, an author adds
-them to the draft (image blocks), or use Settings to ask for described/ASCII
-diagrams. Extracting figures from a source PDF, or generating SVG diagrams, are
-possible future features — not built.
+Generated lessons carry visuals from three sources:
+
+- **Platform images.** The AI-platform animated pipeline emits `image` blocks.
+  `StepMapper` turns each into an image spec and `LessonExpander` ingests it via
+  `ImageIngestor` (hosted URL or inline data: URI → a ready `Media` record →
+  `image` block; identical images are de-duplicated by checksum, non-raster or
+  oversized sources are dropped). Previously these were discarded.
+- **Generated SVG diagrams.** The content prompt invites the model to include a
+  self-contained inline SVG in a fenced ```svg block when a figure genuinely
+  helps (geometry, graphs, flowcharts). `ContentWriter` pulls each one out of the
+  prose into a **`diagram`** block (a new block type: `{format:"svg", svg, alt,
+  caption?}`), when the level's `allowed_block_types` includes `diagram`. Scripts
+  / foreignObject / on* handlers are stripped on write; rendering is script-inert
+  anyway (studio `<img>` data-URI, Flutter `SvgPicture.string`).
+- **Simulations / animations.** The platform's interactive `simulation` and
+  `animation` blocks flow through `StepMapper` unchanged and render in both
+  surfaces.
+
+For any of these to attach, the target content level's `allowed_block_types`
+must list the block type (`image`, `diagram`, `simulation`, `animation`). Set it
+in the schema builder **before publishing** — published levels are immutable.
+Whatever isn't drawn, the model still describes in words.
 
 ## Design notes
 

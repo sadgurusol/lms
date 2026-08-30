@@ -1,5 +1,4 @@
-import { router } from '@inertiajs/react';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import AnimatedRevealPreview, { type Fragment } from './AnimatedRevealPreview';
 import { type Block } from './BlockView';
 
@@ -31,6 +30,10 @@ function reconstructNative(s: { title: string; blocks: Block[] }): Step {
     if (sim) blocks.push({ type: 'simulation', embed_url: sim.payload.url });
     if (anim) blocks.push({ type: 'animation', url: anim.payload.url });
     if (!reveal && rich) blocks.push({ type: 'text', markdown: portableToText(rich.payload.body) });
+    // Self-contained SVG diagrams survive a reopen exactly (no media to re-ingest).
+    for (const d of s.blocks.filter((b) => b.type === 'diagram')) {
+        blocks.push({ type: 'diagram', svg: d.payload.svg, alt: d.payload.alt, caption: d.payload.caption });
+    }
     // Narration: from the reveal (per-step voice_script) or, for a non-reveal
     // step, from its audio block (transcript + pre-generated clip).
     const voice = (reveal?.payload.voice_script as string) ?? (audio?.payload.transcript as string) ?? '';
@@ -88,9 +91,19 @@ function mediaChips(step: Step): string[] {
     const chips = new Set<string>();
     for (const b of step.blocks ?? []) {
         const t = (b as { type?: string }).type;
-        if (t && ['simulation', 'animation', 'image', 'formula'].includes(t)) chips.add(t);
+        if (t && ['simulation', 'animation', 'image', 'diagram', 'formula'].includes(t)) chips.add(t);
     }
     return [...chips];
+}
+
+/** The SVG markup of any diagram blocks in a native step, for inline preview. */
+function stepDiagrams(step: Step): string[] {
+    const out: string[] = [];
+    for (const b of step.blocks ?? []) {
+        const o = b as { type?: string; svg?: string };
+        if (o.type === 'diagram' && typeof o.svg === 'string' && o.svg.trim()) out.push(o.svg);
+    }
+    return out;
 }
 
 export default function LessonBuilder({
@@ -114,10 +127,24 @@ export default function LessonBuilder({
     const [feedback, setFeedback] = useState('');
     const [busy, setBusy] = useState(false);
     const [busyLabel, setBusyLabel] = useState('');
-    const [saving, setSaving] = useState(false);
+    const [autosaving, setAutosaving] = useState(false);
+    const [savedCount, setSavedCount] = useState(0);
     const [error, setError] = useState('');
     const [previewKey, setPreviewKey] = useState(0);
     const [voiceBusy, setVoiceBusy] = useState(false);
+    // Title-first flow for a NEW step: suggest a title, let the author confirm/
+    // edit it, then that title drives the content. `titleDraft` non-null = the
+    // confirm-title panel is open.
+    const [titleDraft, setTitleDraft] = useState<string | null>(null);
+    const [titleBusy, setTitleBusy] = useState(false);
+    // Autosave runs on a serial chain so overlapping commits can't land out of
+    // order (each commit is a full replace — the last write must be the newest).
+    const saveChain = useRef<Promise<void>>(Promise.resolve());
+    const pending = useRef(0);
+    // Latest accepted list (for debounced autosave to read the newest value), and
+    // the debounce timer for text edits (title / narration).
+    const latest = useRef<Step[]>([]);
+    const autosaveTimer = useRef<number | null>(null);
 
     const base = `/studio/course-nodes/${lessonNodeId}/lesson-builder`;
 
@@ -126,8 +153,14 @@ export default function LessonBuilder({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // Open in edit mode: load the lesson's existing steps; only auto-draft when
-    // there are none.
+    // Keep `latest` in sync so a debounced autosave always persists the newest list.
+    useEffect(() => {
+        latest.current = accepted;
+    }, [accepted]);
+
+    // Open in edit mode: load the lesson's existing steps. Never auto-generate —
+    // the author enters instructions first, then clicks "Generate first step"
+    // (the empty state shows that button).
     async function init() {
         try {
             const res = await fetch(`${base.replace('/lesson-builder', '')}/lesson-preview`, {
@@ -137,9 +170,8 @@ export default function LessonBuilder({
             const d = (await res.json()) as { steps?: Array<{ title: string; blocks: Block[] }> };
             const existing = (d.steps ?? []).map(reconstructNative);
             if (existing.length) setAccepted(existing);
-            else void draftNext();
         } catch {
-            void draftNext();
+            // Leave the builder on its empty state; the author starts generation.
         }
     }
 
@@ -163,37 +195,76 @@ export default function LessonBuilder({
         }
     }
 
-    const contextFor = (index: number | null): Step[] => (index === null ? accepted : accepted.slice(0, index));
+    // Place a freshly generated step into the lesson and save it now: append it
+    // (index === null) or replace the step at `index`, select it, and persist.
+    // A generated step IS a saved step — there is no accept/discard.
+    function placeStep(step: Step, index: number | null) {
+        const base = latest.current;
+        const at = index ?? base.length;
+        const next = [...base];
+        next[at] = step;
+        setAccepted(next);
+        setDraft(step);
+        setEditingIndex(at);
+        setIsLast(false);
+        void persist(next);
+    }
 
-    async function draftNext() {
+    // Start a new step: suggest a title first and open the confirm-title panel.
+    // The author confirms/edits it, then generateFromTitle() writes the content.
+    async function beginNewStep() {
         setEditingIndex(null);
-        const stepNumber = accepted.length + 1;
+        setDraft(null);
+        setError('');
+        setTitleBusy(true);
         try {
-            const { step, is_last } = await runStep(
+            const d = await api(`${base}/suggest-title`, 'POST', {
+                steps: latest.current,
+                step_number: latest.current.length + 1,
+                target_steps: targetSteps,
+            });
+            setTitleDraft(((d.title as string) || '').trim());
+        } catch (e) {
+            setError((e as Error).message);
+        } finally {
+            setTitleBusy(false);
+        }
+    }
+
+    // Generate the new step's content for the confirmed title (which drives it and
+    // stays fixed), then save + select it.
+    async function generateFromTitle() {
+        const title = (titleDraft ?? '').trim();
+        if (!title) return;
+        const context = latest.current;
+        const stepNumber = context.length + 1;
+        setTitleDraft(null);
+        try {
+            const { step } = await runStep(
                 `${base}/next-step`,
-                { steps: accepted, instructions, step_number: stepNumber, target_steps: targetSteps, animated },
-                `Drafting step ${stepNumber}…`,
+                { steps: context, instructions, step_number: stepNumber, target_steps: targetSteps, animated, title },
+                `Generating “${title}”…`,
             );
-            setDraft(step);
-            setIsLast(is_last);
-            setFeedback('');
+            placeStep({ ...step, title }, null);
         } catch (e) {
             setError((e as Error).message);
         }
     }
 
+    // Regenerate the currently-shown step in place — keeping its title (the title
+    // is never rewritten by a regenerate; it drives the content).
     async function regenerate() {
         const idx = editingIndex;
-        const stepNumber = idx === null ? accepted.length + 1 : idx + 1;
+        const stepNumber = idx === null ? latest.current.length + 1 : idx + 1;
+        const context = idx === null ? latest.current : latest.current.slice(0, idx);
+        const title = (draft?.title ?? '').trim();
         try {
-            const { step, is_last } = await runStep(
+            const { step } = await runStep(
                 `${base}/next-step`,
-                { steps: contextFor(idx), instructions, step_number: stepNumber, target_steps: targetSteps, animated },
+                { steps: context, instructions, step_number: stepNumber, target_steps: targetSteps, animated, title: title || undefined },
                 `Regenerating step ${stepNumber}…`,
             );
-            setDraft(step);
-            setIsLast(is_last);
-            setFeedback('');
+            placeStep({ ...step, title: title || step.title }, idx);
         } catch (e) {
             setError((e as Error).message);
         }
@@ -201,33 +272,41 @@ export default function LessonBuilder({
 
     async function revise() {
         if (!feedback.trim() || !draft) return;
+        const idx = editingIndex;
         try {
             const { step } = await runStep(
                 `${base}/revise-step`,
-                { step: draft, feedback, steps: contextFor(editingIndex), animated: animated || !!draft.animation },
+                { step: draft, feedback, steps: idx === null ? latest.current : latest.current.slice(0, idx), animated: animated || !!draft.animation },
                 'Revising step…',
             );
-            setDraft({ ...step, step_number: draft.step_number });
+            placeStep({ ...step, step_number: draft.step_number }, idx);
             setFeedback('');
         } catch (e) {
             setError((e as Error).message);
         }
     }
 
-    function accept() {
-        if (!draft) return;
-        const idx = editingIndex;
-        const wasNew = idx === null;
-        const wasLast = isLast;
-        const next = [...accepted];
-        if (idx === null) next.push(draft);
-        else next[idx] = draft;
+    // Edit the shown step (title / narration text): update the draft AND mirror it
+    // into the saved list, then autosave after a short debounce.
+    function patchDraft(updated: Step) {
+        setDraft(updated);
+        if (editingIndex === null) return;
+        const next = [...latest.current];
+        next[editingIndex] = updated;
         setAccepted(next);
-        setDraft(null);
-        setEditingIndex(null);
-        setIsLast(false);
-        const reachedTarget = targetSteps != null && next.length >= targetSteps;
-        if (wasNew && !wasLast && !reachedTarget) setTimeout(() => void draftNext(), 0);
+        if (autosaveTimer.current) window.clearTimeout(autosaveTimer.current);
+        autosaveTimer.current = window.setTimeout(() => void persist(latest.current), 700);
+    }
+
+    // Update the shown step and save immediately (for deliberate actions like
+    // generating narration audio — no debounce).
+    function saveDraft(updated: Step) {
+        setDraft(updated);
+        if (editingIndex === null) return;
+        const next = [...latest.current];
+        next[editingIndex] = updated;
+        setAccepted(next);
+        void persist(next);
     }
 
     function editAccepted(i: number) {
@@ -242,18 +321,36 @@ export default function LessonBuilder({
         setPreviewKey((k) => k + 1);
     }
 
-    async function save() {
-        setSaving(true);
+    // Autosave the full lesson (a commit is a full replace). Serialized on
+    // saveChain so a slower earlier commit can't overwrite a newer one.
+    function persist(steps: Step[]): Promise<void> {
+        pending.current += 1;
+        setAutosaving(true);
         setError('');
-        try {
-            await api(`${base}/commit`, 'POST', { steps: accepted.map((s, i) => ({ ...s, step_number: i + 1 })) });
-            onClose();
-            router.visit(`/studio/courses/${courseId}`);
-        } catch (e) {
-            setError((e as Error).message);
-        } finally {
-            setSaving(false);
+        const payload = { steps: steps.map((s, i) => ({ ...s, step_number: i + 1 })) };
+        saveChain.current = saveChain.current
+            .then(async () => {
+                const res = await api(`${base}/commit`, 'POST', payload);
+                const warnings = (res.warnings as string[] | undefined) ?? [];
+                if (warnings.length) setError(warnings.join(' '));
+                setSavedCount(steps.length);
+            })
+            .catch((e) => setError((e as Error).message))
+            .finally(() => {
+                pending.current -= 1;
+                if (pending.current === 0) setAutosaving(false);
+            });
+        return saveChain.current;
+    }
+
+    // Close: flush any pending debounced edit, wait for saves to land, then close.
+    async function closeAfterSave() {
+        if (autosaveTimer.current) {
+            window.clearTimeout(autosaveTimer.current);
+            void persist(latest.current);
         }
+        await saveChain.current;
+        onClose();
     }
 
     const draftFrags = draft?.animation?.fragments ?? [];
@@ -265,13 +362,13 @@ export default function LessonBuilder({
         if (!draft) return;
         const frags = [...(draft.animation?.fragments ?? [])];
         frags[i] = { ...frags[i], voice: text, audio_url: undefined };
-        setDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: frags } });
+        patchDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: frags } });
     }
 
     /** Edit a non-reveal step's narration. Editing invalidates its clip. */
     function setStepVoice(text: string) {
         if (!draft) return;
-        setDraft({ ...draft, voice_script: text, audio_url: undefined });
+        patchDraft({ ...draft, voice_script: text, audio_url: undefined });
     }
 
     /** (Re)generate narration audio only — no step rerun. Handles a reveal (one
@@ -287,13 +384,13 @@ export default function LessonBuilder({
                 const d = await api(`${base}/voice`, 'POST', { voices });
                 const urls = (d.audio_urls as Array<string | null>) ?? [];
                 const next = frags.map((f, i) => ({ ...f, audio_url: urls[i] ?? f.audio_url }));
-                setDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: next } });
+                saveDraft({ ...draft, animation: { ...(draft.animation ?? {}), fragments: next } });
             } else {
                 const text = (draft.voice_script ?? '').trim();
                 if (!text) return;
                 const d = await api(`${base}/voice`, 'POST', { voices: [text] });
                 const urls = (d.audio_urls as Array<string | null>) ?? [];
-                setDraft({ ...draft, audio_url: urls[0] ?? undefined });
+                saveDraft({ ...draft, audio_url: urls[0] ?? undefined });
             }
             setPreviewKey((k) => k + 1); // replay the preview with the new audio
         } catch (e) {
@@ -324,27 +421,67 @@ export default function LessonBuilder({
                             Lesson so far · {accepted.length}
                         </div>
                         <div className="flex-1 space-y-1 overflow-y-auto p-2">
-                            {accepted.map((s, i) => (
-                                <button
-                                    key={i}
-                                    onClick={() => editAccepted(i)}
-                                    className={`w-full rounded-md border px-3 py-2 text-left ${
-                                        editingIndex === i
-                                            ? 'border-zinc-400 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800'
-                                            : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900'
-                                    }`}
-                                >
+                            {accepted.map((s, i) => {
+                                const regenerating = busy && editingIndex === i;
+                                const selected = editingIndex === i;
+                                return (
+                                    <div
+                                        key={i}
+                                        className={`w-full rounded-md border px-3 py-2 ${
+                                            selected
+                                                ? 'border-zinc-400 bg-zinc-100 dark:border-zinc-600 dark:bg-zinc-800'
+                                                : 'border-transparent hover:bg-zinc-50 dark:hover:bg-zinc-900'
+                                        }`}
+                                    >
+                                        <button onClick={() => editAccepted(i)} className="flex w-full items-center gap-2 text-left">
+                                            <span className="font-mono text-xs text-zinc-400">{i + 1}</span>
+                                            {regenerating ? (
+                                                <span className="flex items-center gap-1.5 text-[10px] text-indigo-600 dark:text-indigo-300">
+                                                    <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                                                    regenerating…
+                                                </span>
+                                            ) : (
+                                                <span className="rounded bg-zinc-200 px-1.5 text-[10px] capitalize dark:bg-zinc-700">
+                                                    {s.step_type}
+                                                </span>
+                                            )}
+                                        </button>
+                                        {selected ? (
+                                            // Edit the title in place — it drives a regenerate of this step.
+                                            <input
+                                                value={draft?.title ?? s.title ?? ''}
+                                                onChange={(e) => patchDraft({ ...(draft ?? s), title: e.target.value })}
+                                                placeholder="Step title…"
+                                                className="mt-1 w-full rounded border border-zinc-300 bg-white px-2 py-1 text-sm dark:border-zinc-700 dark:bg-zinc-900"
+                                            />
+                                        ) : (
+                                            <button
+                                                onClick={() => editAccepted(i)}
+                                                className="mt-0.5 block w-full truncate text-left text-sm text-zinc-800 dark:text-zinc-100"
+                                            >
+                                                {s.title || 'Untitled'}
+                                            </button>
+                                        )}
+                                    </div>
+                                );
+                            })}
+
+                            {/* A new step drafted but not yet accepted — clearly "in review", not part of the lesson yet. */}
+                            {/* A brand-new step being generated (regenerate of an existing one shows on its own row above). */}
+                            {busy && editingIndex === null && (
+                                <div className="w-full rounded-md border border-zinc-200 px-3 py-2 dark:border-zinc-800">
                                     <div className="flex items-center gap-2">
-                                        <span className="font-mono text-xs text-zinc-400">{i + 1}</span>
-                                        <span className="rounded bg-zinc-200 px-1.5 text-[10px] capitalize dark:bg-zinc-700">
-                                            {s.step_type}
+                                        <span className="font-mono text-xs text-zinc-400">{accepted.length + 1}</span>
+                                        <span className="flex items-center gap-1.5 text-[10px] text-indigo-600 dark:text-indigo-300">
+                                            <span className="h-3 w-3 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                                            generating…
                                         </span>
                                     </div>
-                                    <p className="mt-0.5 truncate text-sm text-zinc-800 dark:text-zinc-100">{s.title || 'Untitled'}</p>
-                                </button>
-                            ))}
-                            {accepted.length === 0 && (
-                                <p className="px-2 py-6 text-center text-xs text-zinc-500">The first step is being drafted…</p>
+                                </div>
+                            )}
+
+                            {accepted.length === 0 && !busy && !draft && (
+                                <p className="px-2 py-6 text-center text-xs text-zinc-500">No steps yet.</p>
                             )}
                         </div>
                         <div className="space-y-3 border-t border-zinc-200 p-3 dark:border-zinc-800">
@@ -386,7 +523,45 @@ export default function LessonBuilder({
                         </div>
 
                         <div className="flex-1 overflow-y-auto p-5">
-                            {busy ? (
+                            {titleBusy ? (
+                                <div className="flex h-full flex-col items-center justify-center text-center">
+                                    <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
+                                    <p className="text-sm text-zinc-600 dark:text-zinc-300">Suggesting a title…</p>
+                                </div>
+                            ) : titleDraft !== null ? (
+                                // Confirm/edit the step title first — it drives the content.
+                                <div className="mx-auto flex h-full max-w-xl flex-col items-center justify-center text-center">
+                                    <span className="mb-2 rounded bg-zinc-200 px-2 py-0.5 text-[10px] capitalize dark:bg-zinc-700">
+                                        {`Step ${accepted.length + 1}`}
+                                    </span>
+                                    <h4 className="font-medium text-zinc-800 dark:text-zinc-100">Confirm the step title</h4>
+                                    <p className="mt-1 text-xs text-zinc-500">The title drives what the AI writes for this step. Edit it, then generate.</p>
+                                    <input
+                                        value={titleDraft}
+                                        onChange={(e) => setTitleDraft(e.target.value)}
+                                        onKeyUp={(e) => e.key === 'Enter' && void generateFromTitle()}
+                                        autoFocus
+                                        placeholder="Step title…"
+                                        className="mt-4 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-center text-base dark:border-zinc-700 dark:bg-zinc-900"
+                                    />
+                                    <div className="mt-4 flex items-center gap-2">
+                                        <button
+                                            onClick={() => setTitleDraft(null)}
+                                            className="rounded-md px-4 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
+                                        >
+                                            Cancel
+                                        </button>
+                                        <button
+                                            onClick={() => void generateFromTitle()}
+                                            disabled={!titleDraft.trim()}
+                                            className="rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-40"
+                                        >
+                                            Generate content →
+                                        </button>
+                                    </div>
+                                    {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
+                                </div>
+                            ) : busy ? (
                                 <div className="flex h-full flex-col items-center justify-center text-center">
                                     <div className="mb-4 h-10 w-10 animate-spin rounded-full border-2 border-indigo-500 border-t-transparent" />
                                     <p className="text-sm text-zinc-600 dark:text-zinc-300">{busyLabel}</p>
@@ -396,7 +571,7 @@ export default function LessonBuilder({
                                 <div className="mx-auto max-w-3xl">
                                     <div className="mb-3 flex items-center gap-2">
                                         <span className="rounded bg-zinc-200 px-2 py-0.5 text-[10px] capitalize dark:bg-zinc-700">
-                                            {editingIndex === null ? `New step ${accepted.length + 1}` : `Editing step ${editingIndex + 1}`}
+                                            {`Step ${(editingIndex ?? accepted.length) + 1}`}
                                         </span>
                                         {isLast && (
                                             <span className="rounded bg-green-100 px-2 py-0.5 text-[10px] text-green-700 dark:bg-green-900/40 dark:text-green-300">
@@ -410,12 +585,8 @@ export default function LessonBuilder({
                                         ))}
                                     </div>
 
-                                    <label className="text-[11px] text-zinc-500">Title</label>
-                                    <input
-                                        value={draft.title ?? ''}
-                                        onChange={(e) => setDraft({ ...draft, title: e.target.value })}
-                                        className="mb-4 mt-1 w-full rounded-md border border-zinc-300 bg-white px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900"
-                                    />
+                                    {/* Title shown read-only here; edit it in the sidebar (it drives regenerate). */}
+                                    <h4 className="mb-4 text-lg font-semibold text-zinc-900 dark:text-white">{draft.title || 'Untitled'}</h4>
 
                                     {draftFrags.length > 0 ? (
                                         <AnimatedRevealPreview key={`${previewKey}-${draftFrags.length}`} fragments={draftFrags} />
@@ -424,6 +595,15 @@ export default function LessonBuilder({
                                             {stepText(draft) || 'No preview text.'}
                                         </div>
                                     )}
+
+                                    {/* Inline SVG diagrams (script-inert markup from the model). */}
+                                    {stepDiagrams(draft).map((svg, i) => (
+                                        <div
+                                            key={i}
+                                            className="mt-3 flex justify-center rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900 [&_svg]:h-auto [&_svg]:max-w-full"
+                                            dangerouslySetInnerHTML={{ __html: svg }}
+                                        />
+                                    ))}
 
                                     {/* Narration: review/edit the voice text, then generate audio for
                                         the beats only — no need to regenerate the whole step. */}
@@ -519,9 +699,11 @@ export default function LessonBuilder({
                                 <div className="flex h-full flex-col items-center justify-center text-center">
                                     <h4 className="font-medium text-zinc-800 dark:text-zinc-100">{accepted.length ? 'Lesson ready' : 'Ready to build'}</h4>
                                     <p className="mt-1 max-w-sm text-sm text-zinc-500">
-                                        {accepted.length ? 'Add another step, revise any step, or save.' : 'Generate the first step and refine it.'}
+                                        {accepted.length
+                                            ? 'Pick a step to review, or generate the next one. Every step is saved automatically.'
+                                            : 'Enter any instructions, then generate the first step. Steps save automatically.'}
                                     </p>
-                                    <button onClick={() => void draftNext()} className="mt-5 rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                                    <button onClick={() => void beginNewStep()} className="mt-5 rounded-md bg-indigo-600 px-5 py-2 text-sm font-medium text-white hover:bg-indigo-500">
                                         {accepted.length ? '+ Generate next step' : 'Generate first step'}
                                     </button>
                                     {error && <p className="mt-3 text-sm text-red-500">{error}</p>}
@@ -531,30 +713,26 @@ export default function LessonBuilder({
 
                         {/* Footer */}
                         <div className="flex shrink-0 items-center justify-between gap-3 border-t border-zinc-200 px-5 py-3 dark:border-zinc-800">
-                            <button onClick={onClose} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-                                Cancel
-                            </button>
-                            <div className="flex items-center gap-2">
-                                {draft && !busy && (
-                                    <>
-                                        <button onClick={() => setDraft(null)} className="px-3 py-2 text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-                                            Discard
-                                        </button>
-                                        <button onClick={() => void regenerate()} className="rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700">
-                                            Regenerate
-                                        </button>
-                                        <button onClick={accept} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
-                                            {editingIndex === null ? (isLast ? 'Accept & finish' : 'Accept & next') : 'Save changes'}
-                                        </button>
-                                    </>
+                            <div className="flex items-center gap-3">
+                                <button onClick={() => void closeAfterSave()} className="rounded-md bg-zinc-800 px-4 py-2 text-sm font-medium text-white hover:bg-zinc-700 dark:bg-zinc-200 dark:text-zinc-900 dark:hover:bg-zinc-300">
+                                    Close
+                                </button>
+                                {/* Autosave status — every generated step is saved automatically. */}
+                                {accepted.length > 0 && (
+                                    <span className="text-xs text-zinc-500">
+                                        {autosaving ? 'Saving…' : savedCount > 0 ? `✓ Saved · ${savedCount} step${savedCount === 1 ? '' : 's'}` : ''}
+                                    </span>
                                 )}
-                                {accepted.length > 0 && !busy && (
-                                    <button
-                                        onClick={() => void save()}
-                                        disabled={saving}
-                                        className="rounded-md bg-green-600 px-4 py-2 text-sm font-medium text-white hover:bg-green-500 disabled:opacity-50"
-                                    >
-                                        {saving ? 'Saving…' : `Save lesson (${accepted.length})`}
+                            </div>
+                            <div className="flex items-center gap-2">
+                                {draft && !busy && titleDraft === null && !titleBusy && (
+                                    <button onClick={() => void regenerate()} className="rounded-md border border-zinc-300 px-4 py-2 text-sm dark:border-zinc-700">
+                                        ↻ Regenerate
+                                    </button>
+                                )}
+                                {accepted.length > 0 && !busy && titleDraft === null && !titleBusy && (
+                                    <button onClick={() => void beginNewStep()} className="rounded-md bg-indigo-600 px-4 py-2 text-sm font-medium text-white hover:bg-indigo-500">
+                                        + Next step
                                     </button>
                                 )}
                             </div>

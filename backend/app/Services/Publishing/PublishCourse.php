@@ -38,6 +38,7 @@ final class PublishCourse
                 'snapshot' => $snapshot,
                 'snapshot_etag' => $this->snapshots->etag($snapshot),
                 'media_manifest' => $this->snapshots->mediaManifest($snapshot),
+                'lessons_count' => \App\Portal\LessonCounter::count($snapshot['tree'] ?? []),
                 'changelog' => $changelog ?? $this->changelogAgainstPrevious($course, $snapshot),
                 'published_by' => $actor->id,
             ]);

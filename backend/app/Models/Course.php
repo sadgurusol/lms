@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\SoftDeletes;
 use Illuminate\Support\Collection;
+use Illuminate\Support\Str;
 
 /**
  * A course: an instance of a schema version, plus its draft content tree.
@@ -29,13 +30,70 @@ use Illuminate\Support\Collection;
  * @property-read SchemaVersion $schemaVersion
  */
 #[Fillable([
-    'title', 'code', 'subject', 'grade_band', 'language',
+    'title', 'code', 'slug', 'subject', 'category', 'grade_band', 'language',
+    'visibility', 'free_preview_lessons',
     'schema_version_id', 'workflow_state', 'created_by',
 ])]
 class Course extends Model
 {
     /** @use HasFactory<CourseFactory> */
     use Auditable, HasFactory, HasUuids, SoftDeletes;
+
+    /** Public-portal visibility. */
+    public const VIS_PUBLIC = 'public';     // listed in the catalogue + open
+
+    public const VIS_UNLISTED = 'unlisted'; // reachable by direct link, not listed
+
+    public const VIS_PRIVATE = 'private';   // hidden from the portal entirely
+
+    public const VISIBILITIES = [self::VIS_PUBLIC, self::VIS_UNLISTED, self::VIS_PRIVATE];
+
+    protected function casts(): array
+    {
+        return ['free_preview_lessons' => 'integer'];
+    }
+
+    protected static function booted(): void
+    {
+        // Stamp a URL-friendly slug on create (for public portal links). Unique;
+        // falls back to the title with a numeric suffix on collision.
+        static::creating(function (Course $course): void {
+            if (blank($course->slug)) {
+                $course->slug = self::uniqueSlug((string) $course->title);
+            }
+        });
+    }
+
+    /** A unique slug derived from a title (or "course" when the title is empty). */
+    public static function uniqueSlug(string $title): string
+    {
+        $base = Str::slug($title) ?: 'course';
+        $slug = $base;
+        $n = 1;
+        while (self::withTrashed()->where('slug', $slug)->exists()) {
+            $slug = $base.'-'.(++$n);
+        }
+
+        return $slug;
+    }
+
+    /**
+     * Resolve by the route's key (id for Studio's {course}, slug for the public
+     * {course:slug}), always falling back to the id so any link keeps working.
+     */
+    public function resolveRouteBinding($value, $field = null): ?Model
+    {
+        $field ??= $this->getRouteKeyName();
+        $model = $this->where($field, $value)->first();
+
+        // Fall back to the id only for a real UUID — Postgres errors on a
+        // non-UUID compared to the uuid column.
+        if ($model === null && $field !== $this->getKeyName() && Str::isUuid($value)) {
+            $model = $this->where($this->getKeyName(), $value)->first();
+        }
+
+        return $model;
+    }
 
     public const STATE_DRAFT = 'draft';
 

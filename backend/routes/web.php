@@ -27,7 +27,44 @@ use App\Http\Controllers\Studio\SetPasswordController;
 use App\Http\Controllers\Studio\StaffController;
 use Illuminate\Support\Facades\Route;
 
-Route::redirect('/', '/studio');
+/*
+ * The public learning portal (a client-routed React SPA). All portal deep links
+ * return the same shell; the SPA reads the URL and fetches /api/v1/portal/*.
+ * The portal is the front door; the studio lives under /studio.
+ */
+Route::get('/', [\App\Http\Controllers\Portal\PageController::class, 'home'])->name('portal.home');
+Route::get('/courses', [\App\Http\Controllers\Portal\PageController::class, 'catalog']);
+Route::get('/courses/{slug}', [\App\Http\Controllers\Portal\PageController::class, 'course'])->where('slug', '[A-Za-z0-9\-]+');
+Route::get('/courses/{slug}/learn', [\App\Http\Controllers\Portal\PageController::class, 'learn'])->where('slug', '[A-Za-z0-9\-]+');
+Route::view('/reset-password', 'portal'); // password-reset form (SPA reads token/email from the query)
+Route::get('/sitemap.xml', [\App\Http\Controllers\Portal\PageController::class, 'sitemap']);
+Route::get('/robots.txt', [\App\Http\Controllers\Portal\PageController::class, 'robots']);
+
+// Learner sign-in for the portal (session auth, same-origin SPA).
+Route::prefix('portal/auth')->group(function () {
+    Route::get('/me', [\App\Http\Controllers\Portal\AuthController::class, 'me']);
+    Route::post('/register', [\App\Http\Controllers\Portal\AuthController::class, 'register'])->middleware('throttle:register');
+    Route::post('/login', [\App\Http\Controllers\Portal\AuthController::class, 'login'])->middleware('throttle:login');
+    Route::post('/logout', [\App\Http\Controllers\Portal\AuthController::class, 'logout']);
+
+    // Password reset.
+    Route::post('/forgot-password', [\App\Http\Controllers\Portal\PasswordController::class, 'forgot'])->middleware('throttle:login');
+    Route::post('/reset-password', [\App\Http\Controllers\Portal\PasswordController::class, 'reset'])->middleware('throttle:login');
+
+    // Email verification: the signed link (no session) + an authed resend.
+    Route::get('/verify/{id}/{hash}', [\App\Http\Controllers\Portal\VerifyController::class, 'verify'])
+        ->middleware('signed')->name('portal.verify');
+    Route::post('/verify/resend', [\App\Http\Controllers\Portal\VerifyController::class, 'resend'])
+        ->middleware(['auth', 'throttle:6,1']);
+});
+
+// Signed-in learner state: cross-device progress + "My learning" enrollments.
+Route::middleware('auth')->prefix('portal')->group(function () {
+    Route::get('/me/courses', [\App\Http\Controllers\Portal\ProgressController::class, 'myCourses']);
+    Route::get('/courses/{course:slug}/progress', [\App\Http\Controllers\Portal\ProgressController::class, 'progress']);
+    Route::post('/courses/{course:slug}/progress', [\App\Http\Controllers\Portal\ProgressController::class, 'record']);
+    Route::post('/courses/{course:slug}/enroll', [\App\Http\Controllers\Portal\ProgressController::class, 'enroll']);
+});
 
 /*
  * The studio: session-cookie auth, staff only.
@@ -86,6 +123,7 @@ Route::prefix('studio')->name('studio.')->group(function () {
         Route::post('/courses', [CourseController::class, 'store'])->name('courses.store');
         Route::get('/courses/{course}', [CourseController::class, 'show'])->name('courses.show');
         Route::patch('/courses/{course}', [CourseController::class, 'update'])->name('courses.update');
+        Route::patch('/courses/{course}/visibility', [CourseController::class, 'visibility'])->name('courses.visibility');
         Route::delete('/courses/{course}', [CourseController::class, 'destroy'])->name('courses.destroy');
         Route::get('/courses/{course}/preview', [CourseController::class, 'preview'])
             ->name('courses.preview');
@@ -160,6 +198,7 @@ Route::prefix('studio')->name('studio.')->group(function () {
 
         // Interactive animated-lesson builder (docs/14 WS3) — JSON, polled by React.
         Route::get('/course-nodes/{lesson}/lesson-preview', [LessonBuilderController::class, 'preview'])->name('lesson-builder.preview');
+        Route::post('/course-nodes/{lesson}/lesson-builder/suggest-title', [LessonBuilderController::class, 'suggestTitle'])->name('lesson-builder.suggest-title');
         Route::post('/course-nodes/{lesson}/lesson-builder/next-step', [LessonBuilderController::class, 'nextStep'])->name('lesson-builder.next');
         Route::post('/course-nodes/{lesson}/lesson-builder/revise-step', [LessonBuilderController::class, 'reviseStep'])->name('lesson-builder.revise');
         Route::post('/course-nodes/{lesson}/lesson-builder/voice', [LessonBuilderController::class, 'voice'])->name('lesson-builder.voice');

@@ -163,17 +163,16 @@ export default function LessonPlayer({
                         )}
                     </div>
                 ) : step && reveal ? (
-                    <div className="absolute inset-0 flex justify-center overflow-y-auto p-8 md:p-12">
-                        <div className="w-full max-w-3xl">
-                            <AnimatedRevealPreview
-                                ref={revealRef}
-                                bare
-                                autoplay
-                                key={index}
-                                fragments={(reveal.payload.fragments as Fragment[] | undefined) ?? []}
-                                onPlayingChange={setRevealPlaying}
-                            />
-                        </div>
+                    // One beat at a time in a fixed canvas, centered like a video.
+                    <div className="absolute inset-0 flex items-center justify-center p-4 md:p-8">
+                        <AnimatedRevealPreview
+                            ref={revealRef}
+                            bare
+                            autoplay
+                            key={index}
+                            fragments={(reveal.payload.fragments as Fragment[] | undefined) ?? []}
+                            onPlayingChange={setRevealPlaying}
+                        />
                     </div>
                 ) : step ? (
                     <div className="absolute inset-0 overflow-y-auto p-8 md:p-12">

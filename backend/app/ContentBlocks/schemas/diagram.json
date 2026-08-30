@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "diagram",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["format", "svg", "alt"],
+  "properties": {
+    "format": { "const": "svg" },
+    "svg": { "type": "string", "minLength": 1, "maxLength": 100000, "pattern": "^\\s*<svg" },
+    "alt": { "type": "string" },
+    "caption": { "type": "string" }
+  }
+}

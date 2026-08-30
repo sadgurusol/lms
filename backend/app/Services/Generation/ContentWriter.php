@@ -9,31 +9,105 @@ use App\Services\Content\BlockEditor;
 use RuntimeException;
 
 /**
- * Writes AI-generated teaching text onto a course node as a rich-text block,
- * converting lightly-marked text (paragraphs, #/##/### headings, - bullets) to
- * Portable Text. Shared by {@see CourseBuilder} and the per-topic content job.
+ * Writes AI-generated teaching text onto a course node: a rich-text block for the
+ * prose (lightly-marked text — paragraphs, headings, bullets and inline bold /
+ * italic / code — converted to Portable Text) plus a `diagram` block for each
+ * inline fenced-SVG figure the model produced. Shared by {@see CourseBuilder}
+ * and the per-topic content job.
  */
 final class ContentWriter
 {
     public function __construct(private readonly BlockEditor $blocks) {}
 
-    /** Append a rich-text block with $content to $node, if the level permits it. */
+    /**
+     * Append content to $node: a rich-text block for the prose, plus a `diagram`
+     * block for each inline ```svg fenced figure the model produced (when the
+     * level permits diagrams). The SVG is pulled out of the prose first.
+     */
     public function write(CourseNode $node, SchemaLevel $level, string $content): void
     {
-        if ($content === '' || ! $level->allows_content
-            || ! in_array(BlockType::RichText->value, $level->allowed_block_types ?? [], true)) {
+        if ($content === '' || ! $level->allows_content) {
             return;
         }
 
-        try {
-            $block = $this->blocks->append($node, BlockType::RichText->value);
-            $this->blocks->updatePayload($block, [
-                'format' => 'portable_text',
-                'body' => $this->toPortableText($content),
-            ]);
-        } catch (RuntimeException) {
-            // A malformed block payload should not sink the node.
+        [$prose, $diagrams] = $this->extractSvgDiagrams($content);
+
+        if ($prose !== '' && in_array(BlockType::RichText->value, $level->allowed_block_types ?? [], true)) {
+            try {
+                $block = $this->blocks->append($node, BlockType::RichText->value);
+                $this->blocks->updatePayload($block, [
+                    'format' => 'portable_text',
+                    'body' => $this->toPortableText($prose),
+                ]);
+            } catch (RuntimeException) {
+                // A malformed block payload should not sink the node.
+            }
         }
+
+        if (in_array(BlockType::Diagram->value, $level->allowed_block_types ?? [], true)) {
+            foreach ($diagrams as $diagram) {
+                try {
+                    $this->blocks->appendAuthored($node, BlockType::Diagram->value, $diagram);
+                } catch (RuntimeException) {
+                    // A malformed diagram should not sink the node.
+                }
+            }
+        }
+    }
+
+    /**
+     * Pull ```svg fenced blocks out of the content, returning the remaining prose
+     * and a list of validated `diagram` payloads.
+     *
+     * @return array{0: string, 1: list<array<string, mixed>>}
+     */
+    private function extractSvgDiagrams(string $content): array
+    {
+        $diagrams = [];
+
+        // ```svg  … ```  (optionally captioned by the line right after the fence)
+        $prose = preg_replace_callback(
+            '/```svg\s*\n(.*?)```/is',
+            function (array $m) use (&$diagrams): string {
+                $svg = $this->cleanSvg($m[1]);
+                if ($svg !== null) {
+                    $diagrams[] = ['format' => 'svg', 'svg' => $svg, 'alt' => 'Diagram'];
+                }
+
+                return ''; // remove the fence from the prose
+            },
+            $content,
+        ) ?? $content;
+
+        return [trim($prose), $diagrams];
+    }
+
+    /**
+     * Keep only the `<svg>…</svg>` and strip anything scriptable, as defence in
+     * depth — rendering is already script-inert (studio <img>, Flutter
+     * SvgPicture), but we never store an obviously active payload. Public so the
+     * ai-platform bridge ({@see StepMapper}) sanitizes diagrams the same way.
+     */
+    public function cleanSvg(string $raw): ?string
+    {
+        if (preg_match('/<svg\b.*?<\/svg>/is', $raw, $m) !== 1) {
+            return null;
+        }
+
+        $svg = $m[0];
+        $svg = preg_replace('#<script\b[^>]*>.*?</script\s*>#is', '', $svg) ?? $svg;
+        $svg = preg_replace('#<foreignObject\b.*?</foreignObject\s*>#is', '', $svg) ?? $svg;
+        $svg = preg_replace('/\son\w+\s*=\s*("[^"]*"|\'[^\']*\'|[^\s>]+)/i', '', $svg) ?? $svg;
+        $svg = trim($svg);
+
+        // The root <svg> must declare the SVG namespace, or it won't render when
+        // loaded via an <img> data-URI / flutter_svg (only inline works). Inject
+        // it when the model omitted it.
+        if ($svg !== '' && ! preg_match('/<svg\b[^>]*\bxmlns\s*=/i', $svg)) {
+            $svg = preg_replace('/<svg\b/i', '<svg xmlns="http://www.w3.org/2000/svg"', $svg, 1) ?? $svg;
+        }
+
+        return $svg;
     }
 
     /**

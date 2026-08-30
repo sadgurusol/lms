@@ -2,10 +2,12 @@
 
 namespace App\Services\Generation;
 
+use App\ContentBlocks\BlockType;
 use App\Models\CourseNode;
 use App\Models\SchemaLevel;
 use App\Services\Content\BlockEditor;
 use App\Services\Tree\CourseTree;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 use Throwable;
 
@@ -24,11 +26,12 @@ final class LessonExpander
         private readonly CourseTree $tree,
         private readonly BlockEditor $blocks,
         private readonly StepMapper $mapper,
+        private readonly ImageIngestor $images,
     ) {}
 
     /**
-     * @param  array<int, array<string, mixed>>  $steps  platform steps (native block shape)
-     * @return int  number of Step nodes created
+     * @param  array<int, mixed>  $steps  platform steps (native block shape; untrusted)
+     * @return int number of Step nodes created
      */
     public function expand(CourseNode $lesson, SchemaLevel $stepLevel, array $steps): int
     {
@@ -55,9 +58,20 @@ final class LessonExpander
 
             foreach ($this->mapper->blocksFor($step) as $spec) {
                 try {
-                    $this->blocks->appendAuthored($node, $spec['type'], $spec['payload']);
-                } catch (Throwable) {
-                    // A malformed/blocked payload must not sink the step.
+                    if ($spec['type'] === BlockType::Image->value) {
+                        $this->attachImage($node, $spec['payload']);
+                    } else {
+                        $this->blocks->appendAuthored($node, $spec['type'], $spec['payload']);
+                    }
+                } catch (Throwable $e) {
+                    // A malformed/blocked payload must not sink the step — but log
+                    // why, so a silently-dropped block (e.g. a level that doesn't
+                    // permit the type) is diagnosable rather than invisible.
+                    Log::warning('LessonExpander: skipped a block', [
+                        'node' => $node->id,
+                        'type' => $spec['type'],
+                        'error' => $e->getMessage(),
+                    ]);
                 }
             }
 
@@ -65,5 +79,25 @@ final class LessonExpander
         }
 
         return $created;
+    }
+
+    /**
+     * Resolve an image spec ({src, alt, caption?}) into a real image block:
+     * ingest the source into a Media record, then attach. If the picture can't
+     * be fetched it's simply omitted — the step still stands on its text.
+     *
+     * @param  array<string, mixed>  $spec
+     */
+    private function attachImage(CourseNode $node, array $spec): void
+    {
+        $media = $this->images->ingest((string) ($spec['src'] ?? ''), $node->created_by);
+        if ($media === null) {
+            return;
+        }
+
+        $this->blocks->appendMedia($node, BlockType::Image->value, $media->id, array_filter([
+            'alt' => trim((string) ($spec['alt'] ?? '')) ?: 'Illustration',
+            'caption' => trim((string) ($spec['caption'] ?? '')) ?: null,
+        ], fn ($v) => $v !== null));
     }
 }

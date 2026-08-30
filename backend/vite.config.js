@@ -11,7 +11,13 @@ import path from 'node:path';
 export default defineConfig({
     plugins: [
         laravel({
-            input: ['resources/css/app.css', 'resources/js/studio/main.tsx'],
+            input: [
+                'resources/css/app.css',
+                'resources/js/studio/main.tsx',
+                // The public learning portal — its own bundle and design system.
+                'resources/css/portal.css',
+                'resources/js/portal/main.tsx',
+            ],
             refresh: true,
         }),
         react(),

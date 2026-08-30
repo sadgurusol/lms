@@ -4,7 +4,8 @@
  * drift.
  */
 
-import AnimatedRevealPreview, { type Fragment } from './AnimatedRevealPreview';
+import { useEffect, useRef } from 'react';
+import AnimatedRevealPreview, { svgDataUri, type Fragment } from './AnimatedRevealPreview';
 
 type Span = { _type: string; text?: string; marks?: string[] };
 type PtBlock = { _type: string; style?: string; listItem?: string; children?: Span[] };
@@ -21,6 +22,8 @@ export function BlockView({ block }: { block: Block }) {
             return <Embed payload={block.payload} />;
         case 'image':
             return <ImageBlock payload={block.payload} />;
+        case 'diagram':
+            return <DiagramBlock payload={block.payload} />;
         case 'attachment':
             return <Attachment payload={block.payload} />;
         case 'video':
@@ -40,6 +43,24 @@ export function BlockView({ block }: { block: Block }) {
                 </div>
             );
     }
+}
+
+function DiagramBlock({ payload }: { payload: Record<string, unknown> }) {
+    const svg = typeof payload.svg === 'string' ? payload.svg : null;
+    const alt = typeof payload.alt === 'string' ? payload.alt : 'Diagram';
+    const caption = typeof payload.caption === 'string' ? payload.caption : null;
+    if (!svg) return null;
+
+    // Render via an <img> data-URI, not raw innerHTML: SVG loaded through <img>
+    // runs script-inert (no JS, no external fetches), so a generated diagram is
+    // safe to show without a sanitiser. (svgDataUri injects xmlns when missing.)
+    const src = svgDataUri(svg);
+    return (
+        <figure className="my-3">
+            <img src={src} alt={alt} className="max-w-full rounded-md border border-zinc-200 dark:border-zinc-800" />
+            {caption && <figcaption className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">{caption}</figcaption>}
+        </figure>
+    );
 }
 
 function SimulationBlock({ payload }: { payload: Record<string, unknown> }) {
@@ -100,7 +121,8 @@ function VideoBlock({ payload }: { payload: Record<string, unknown> }) {
     // A published/preview block carries a playable source. In the editor it does
     // not (the stream is bearer-gated), so we show an informative placeholder.
     if (src) {
-        return (
+        const isHls = payload.src_type === 'hls' || src.endsWith('.m3u8');
+        return isHls ? <HlsVideo src={src} poster={poster} /> : (
             <video
                 controls
                 preload="metadata"
@@ -130,6 +152,44 @@ function VideoBlock({ payload }: { payload: Record<string, unknown> }) {
             </span>
         </div>
     );
+}
+
+/** Plays an HLS (.m3u8) source — native where supported (Safari), else hls.js,
+ *  which is imported lazily so it only loads on a page that actually has video. */
+function HlsVideo({ src, poster }: { src: string; poster?: string }) {
+    const ref = useRef<HTMLVideoElement>(null);
+
+    useEffect(() => {
+        const video = ref.current;
+        if (!video) return;
+
+        // Safari (and iOS) play HLS natively.
+        if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            video.src = src;
+            return;
+        }
+
+        let cancelled = false;
+        let hls: { destroy: () => void } | null = null;
+        void import('hls.js').then(({ default: Hls }) => {
+            if (cancelled || !ref.current) return;
+            if (Hls.isSupported()) {
+                const instance = new Hls({ enableWorker: true });
+                instance.loadSource(src);
+                instance.attachMedia(ref.current);
+                hls = instance;
+            } else {
+                ref.current.src = src; // last resort
+            }
+        });
+
+        return () => {
+            cancelled = true;
+            hls?.destroy();
+        };
+    }, [src]);
+
+    return <video ref={ref} controls preload="metadata" poster={poster} className="max-h-[480px] w-full rounded-md bg-black" />;
 }
 
 function ImageBlock({ payload }: { payload: Record<string, unknown> }) {

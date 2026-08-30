@@ -8,11 +8,31 @@ import {
     type ReactNode,
 } from 'react';
 
-export type Fragment = { md: string; effect?: string; voice?: string; audio_url?: string; duration_ms?: number };
+export type Fragment = {
+    md: string;
+    effect?: string;
+    voice?: string;
+    audio_url?: string;
+    duration_ms?: number;
+    // Per-beat visual, revealed with the beat: an inline SVG (may be SMIL-animated)
+    // and/or an image/gif URL.
+    svg?: string;
+    image_url?: string;
+    alt?: string;
+};
 
 /** Imperative control surface so a parent (e.g. the lesson player) can drive
  *  Play/Pause from its own footer instead of the in-card controls. */
 export type RevealHandle = { toggle: () => void; restart: () => void; isPlaying: () => boolean };
+
+/** An SVG rendered via <img> needs the xmlns on its root or it won't display —
+ *  inject it when missing (older content lacks it), then encode as a data URI. */
+export function svgDataUri(svg: string): string {
+    const withNs = /<svg\b[^>]*\bxmlns=/i.test(svg)
+        ? svg
+        : svg.replace(/<svg\b/i, '<svg xmlns="http://www.w3.org/2000/svg"');
+    return `data:image/svg+xml;utf8,${encodeURIComponent(withNs)}`;
+}
 
 function plainText(md: string): string {
     return md
@@ -131,9 +151,30 @@ function Beat({ frag, typing }: { frag: Fragment; typing: boolean }) {
         return () => clearInterval(t);
     }, [typing, full.length]);
 
+    // One beat fills the stage: text sits above, the visual takes the remaining
+    // height and scales to fit — so nothing overflows into a hidden scroll area.
     return (
-        <div style={entrance(frag.effect, shown)}>
-            {typing ? <p>{full.slice(0, typed)}</p> : <Md md={frag.md} />}
+        <div
+            style={entrance(frag.effect, shown)}
+            className="absolute inset-0 flex flex-col items-center justify-center gap-4 p-6 text-center md:p-10"
+        >
+            <div className="w-full shrink-0 overflow-hidden">
+                {typing ? <p>{full.slice(0, typed)}</p> : <Md md={frag.md} />}
+            </div>
+            <FragmentVisual frag={frag} />
+        </div>
+    );
+}
+
+/** The beat's own visual: an inline SVG (rendered via an <img> data-URI so it is
+ *  script-inert yet still runs SMIL animations) or an image/gif URL. Fills the
+ *  remaining stage height and scales down to fit (object-contain). */
+function FragmentVisual({ frag }: { frag: Fragment }) {
+    const src = frag.svg ? svgDataUri(frag.svg) : frag.image_url;
+    if (!src) return null;
+    return (
+        <div className="flex min-h-0 w-full flex-1 items-center justify-center">
+            <img src={src} alt={frag.alt ?? ''} className="max-h-full max-w-full rounded-md object-contain" />
         </div>
     );
 }
@@ -276,22 +317,30 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    const beats = (
-        <div className="space-y-3">
-            {fragments.map((f, i) =>
-                i <= revealed ? (
-                    <Beat key={`${runId.current}-${i}`} frag={f} typing={f.effect === 'typewriter' && i === revealed && playing} />
-                ) : null,
+    // One beat on screen at a time, in a fixed aspect-ratio canvas (like a video),
+    // so a beat's image never pushes content into a hidden scroll area.
+    const cur = revealed >= 0 ? fragments[revealed] ?? null : null;
+    const stage = (
+        <div className="relative mx-auto aspect-video max-h-full w-full max-w-4xl overflow-hidden rounded-lg bg-black/[0.02] dark:bg-white/[0.03]">
+            {cur ? (
+                <Beat
+                    key={`${runId.current}-${revealed}`}
+                    frag={cur}
+                    typing={cur.effect === 'typewriter' && playing}
+                />
+            ) : (
+                <div className="flex h-full items-center justify-center text-sm text-zinc-500">
+                    {bare ? '' : 'Press play to preview the reveal.'}
+                </div>
             )}
-            {revealed < 0 && !bare && <p className="text-sm text-zinc-500">Press play to preview the reveal.</p>}
         </div>
     );
 
-    if (bare) return beats;
+    if (bare) return stage;
 
     return (
         <div className="rounded-lg border border-zinc-200 bg-white p-4 dark:border-zinc-800 dark:bg-zinc-900">
-            {beats}
+            {stage}
             <div className="mt-4 flex items-center gap-2">
                 <button
                     type="button"
@@ -306,7 +355,7 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
                     ))}
                 </div>
                 <button type="button" onClick={revealAll} className="text-sm text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300">
-                    Reveal all
+                    Skip to end
                 </button>
             </div>
         </div>

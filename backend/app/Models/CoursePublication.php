@@ -26,7 +26,7 @@ use Illuminate\Support\Carbon;
  */
 #[Fillable([
     'course_id', 'number', 'schema_version_id', 'snapshot', 'snapshot_etag',
-    'media_manifest', 'changelog', 'published_by',
+    'media_manifest', 'lessons_count', 'changelog', 'published_by',
 ])]
 class CoursePublication extends Model
 {

@@ -48,9 +48,13 @@ class GenerationSettings
           subheadings and "- " for bullet lists. No other markup, no JSON, no preamble.
         - Cover just the topic you are asked about, at an appropriate depth. Do not repeat
           the topic title as a heading, and do not write content for other topics.
-        - The learner sees only your text — no images or figures are rendered. So describe
-          any diagram, shape, or figure fully in words; never write "see Figure 1" or refer
-          to a picture the learner cannot see.
+        - When a simple diagram would genuinely aid understanding (geometry, a graph, a
+          flowchart, a labelled shape), include ONE self-contained inline SVG in a fenced
+          ```svg code block: a valid <svg> with a viewBox, no scripts, no external
+          references. Keep it clean and legible. Use at most a couple per topic.
+        - For anything you do not draw as an SVG, describe it fully in words — the learner
+          sees only your text and the SVG diagrams; never write "see Figure 1" or refer to
+          a picture that is not there.
         PROMPT;
 
     public function outlineInstructions(): string

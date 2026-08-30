@@ -18,7 +18,10 @@
           "effect": { "enum": ["fade", "slide-up", "slide-left", "zoom", "typewriter"] },
           "voice": { "type": "string" },
           "audio_url": { "type": "string", "format": "uri" },
-          "duration_ms": { "type": "integer", "minimum": 100, "maximum": 6000 }
+          "duration_ms": { "type": "integer", "minimum": 100, "maximum": 6000 },
+          "svg": { "type": "string", "minLength": 1, "maxLength": 100000, "pattern": "^\\s*<svg" },
+          "image_url": { "type": "string", "format": "uri" },
+          "alt": { "type": "string" }
         }
       }
     }

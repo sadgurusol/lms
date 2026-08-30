@@ -142,6 +142,7 @@ function CreateForm({
         title: '',
         code: '',
         subject: '',
+        category: '',
         grade_band: '',
         language: 'en',
         schema_version_id: versions[0]?.id ?? '',
@@ -223,6 +224,20 @@ function CreateForm({
                         placeholder="English"
                         className={inputClass}
                     />
+                </Field>
+
+                <Field label="Category" error={errors.category} htmlFor="course-category">
+                    <select
+                        id="course-category"
+                        value={data.category}
+                        onChange={(e) => setData('category', e.target.value)}
+                        className={inputClass}
+                    >
+                        <option value="">Uncategorised</option>
+                        <option value="academic">Academic</option>
+                        <option value="professional">Professional</option>
+                        <option value="competitive">Competitive Exams</option>
+                    </select>
                 </Field>
 
                 <Field label="Grade band" error={errors.grade_band} htmlFor="course-grade-band">

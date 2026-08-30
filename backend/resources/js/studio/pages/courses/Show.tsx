@@ -5,6 +5,13 @@ import { BlockView, type Block } from '@/studio/components/BlockView';
 import { useConfirm } from '@/studio/components/ConfirmDialog';
 import LessonPlayer from '@/studio/components/LessonPlayer';
 
+/** Portal top-level categories (mirror App\Portal\Category). */
+const COURSE_CATEGORIES = [
+    { value: 'academic', label: 'Academic' },
+    { value: 'professional', label: 'Professional' },
+    { value: 'competitive', label: 'Competitive Exams' },
+];
+
 type AddLevel = { schema_level_id: string; name: string; remaining: number | null };
 
 type TreeNode = {
@@ -26,10 +33,14 @@ type Props = {
         title: string;
         code: string | null;
         subject: string | null;
+        category: string | null;
         grade_band: string | null;
         language: string;
         workflow_state: string;
         published_number: number | null;
+        is_published: boolean;
+        visibility: string;
+        free_preview_lessons: number | null;
         schema: { name: string; version: number };
     };
     tree: TreeNode[];
@@ -86,6 +97,9 @@ export default function CourseShow({ course, tree, root_levels, can }: Props) {
             </div>
 
             {can.edit && <CourseDetails course={course} canDelete={can.delete} />}
+
+            {/* Public-portal visibility — relevant once the course is published. */}
+            {course.is_published && <PortalVisibility course={course} />}
 
             {/* The live published version is always one click away, read-only,
                 whatever state the draft is in. */}
@@ -233,6 +247,7 @@ function CourseDetailsForm({ course, onDone }: { course: Props['course']; onDone
         title: course.title,
         code: course.code ?? '',
         subject: course.subject ?? '',
+        category: course.category ?? '',
         grade_band: course.grade_band ?? '',
         language: course.language,
     });
@@ -244,6 +259,7 @@ function CourseDetailsForm({ course, onDone }: { course: Props['course']; onDone
             ...d,
             code: d.code.trim() || null,
             subject: d.subject.trim() || null,
+            category: d.category || null,
             grade_band: d.grade_band.trim() || null,
         }));
         patch(`/studio/courses/${course.id}`, { onSuccess: onDone });
@@ -282,6 +298,16 @@ function CourseDetailsForm({ course, onDone }: { course: Props['course']; onDone
                 </label>
 
                 <label className="space-y-1.5">
+                    <span className="block text-sm font-medium">Category</span>
+                    <select value={data.category} onChange={(e) => setData('category', e.target.value)} className={input}>
+                        <option value="">Uncategorised</option>
+                        {COURSE_CATEGORIES.map((c) => (
+                            <option key={c.value} value={c.value}>{c.label}</option>
+                        ))}
+                    </select>
+                </label>
+
+                <label className="space-y-1.5">
                     <span className="block text-sm font-medium">Grade band</span>
                     <input value={data.grade_band} onChange={(e) => setData('grade_band', e.target.value)} className={input} />
                 </label>
@@ -298,6 +324,64 @@ function CourseDetailsForm({ course, onDone }: { course: Props['course']; onDone
                 <button type="button" onClick={onDone} className="rounded-md px-3 py-2 text-sm">
                     Cancel
                 </button>
+            </div>
+        </form>
+    );
+}
+
+/** Public-portal visibility + free-preview limit (settable once published). */
+function PortalVisibility({ course }: { course: Props['course'] }) {
+    const { data, setData, transform, patch, processing, errors } = useForm({
+        visibility: course.visibility,
+        free_preview_lessons: course.free_preview_lessons == null ? '' : String(course.free_preview_lessons),
+    });
+
+    function submit(event: FormEvent) {
+        event.preventDefault();
+        transform((d) => ({
+            ...d,
+            free_preview_lessons: d.free_preview_lessons === '' ? null : Number(d.free_preview_lessons),
+        }));
+        patch(`/studio/courses/${course.id}/visibility`, { preserveScroll: true });
+    }
+
+    const input = 'mt-1 w-full rounded-md border border-zinc-300 px-3 py-2 text-sm dark:border-zinc-700 dark:bg-zinc-900';
+
+    return (
+        <form onSubmit={submit} className="mb-6 max-w-2xl rounded-md border border-zinc-200 p-4 dark:border-zinc-800">
+            <div className="flex items-start justify-between gap-4">
+                <div>
+                    <h2 className="font-semibold text-zinc-900 dark:text-white">Public portal</h2>
+                    <p className="text-sm text-zinc-500">Who can find and open this course on the learning portal.</p>
+                </div>
+                <button disabled={processing} className="shrink-0 rounded-md bg-indigo-600 px-3 py-2 text-sm font-medium text-white hover:bg-indigo-500 disabled:opacity-50">
+                    Save
+                </button>
+            </div>
+            <div className="mt-4 grid gap-4 sm:grid-cols-2">
+                <label className="block text-sm">
+                    <span className="font-medium">Visibility</span>
+                    <select value={data.visibility} onChange={(e) => setData('visibility', e.target.value)} className={input}>
+                        <option value="public">Public — listed in the catalogue</option>
+                        <option value="unlisted">Unlisted — reachable by link only</option>
+                        <option value="private">Private — hidden from the portal</option>
+                    </select>
+                    {errors.visibility && <span className="mt-1 block text-xs text-red-500">{errors.visibility}</span>}
+                </label>
+                <label className="block text-sm">
+                    <span className="font-medium">Free preview (lessons)</span>
+                    <input
+                        type="number"
+                        min={1}
+                        max={999}
+                        value={data.free_preview_lessons}
+                        onChange={(e) => setData('free_preview_lessons', e.target.value)}
+                        placeholder="All free"
+                        className={input}
+                    />
+                    <span className="mt-1 block text-xs text-zinc-400">Blank = every lesson free. Otherwise lessons after this many are locked.</span>
+                    {errors.free_preview_lessons && <span className="mt-1 block text-xs text-red-500">{errors.free_preview_lessons}</span>}
+                </label>
             </div>
         </form>
     );

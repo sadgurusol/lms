@@ -62,7 +62,7 @@ class AiPlatformClient
      * @param  array<string, mixed>  $context  topic|grade_level|subject|chapter|objectives|content|instructions
      * @param  array<int, array<string, mixed>>  $priorSteps  already-accepted steps (native shape)
      */
-    public function startStep(array $context, array $priorSteps, ?int $stepNumber, ?int $targetSteps, bool $animated, ?string $feedback = null): string
+    public function startStep(array $context, array $priorSteps, ?int $stepNumber, ?int $targetSteps, bool $animated, ?string $feedback = null, ?string $title = null): string
     {
         $payload = $this->contextPayload($context) + array_filter([
             'prior_steps' => $this->priorStepsPayload($priorSteps),
@@ -70,9 +70,34 @@ class AiPlatformClient
             'target_steps' => $targetSteps,
             'animated' => $animated,
             'feedback' => $feedback,
+            // A confirmed title drives the content and is kept verbatim.
+            'title' => $title,
         ], fn ($v) => $v !== null);
 
         return $this->enqueue($payload, '/v1/lessons/step');
+    }
+
+    /**
+     * Suggest a title for the next step (synchronous, quick). The author
+     * confirms/edits it, then it drives content generation.
+     *
+     * @param  array<string, mixed>  $context
+     * @param  array<int, array<string, mixed>>  $priorSteps
+     */
+    public function suggestTitle(array $context, array $priorSteps, ?int $stepNumber, ?int $targetSteps): string
+    {
+        $payload = $this->contextPayload($context) + array_filter([
+            'prior_steps' => $this->priorStepsPayload($priorSteps),
+            'step_number' => $stepNumber,
+            'target_steps' => $targetSteps,
+        ], fn ($v) => $v !== null);
+
+        $res = $this->http()->post($this->url('/v1/lessons/suggest-title'), $payload);
+        if (! $res->successful()) {
+            throw new RuntimeException('AI Platform title failed ('.$res->status().'): '.$res->body());
+        }
+
+        return trim((string) $res->json('title'));
     }
 
     /**
@@ -84,7 +109,7 @@ class AiPlatformClient
      */
     public function startReviseStep(array $context, array $step, string $feedback, array $priorSteps, bool $animated): string
     {
-        $payload = $this->contextPayload($context) + [
+        $payload = $this->contextPayload($context) + array_filter([
             'prior_steps' => $this->priorStepsPayload($priorSteps),
             'revise_step' => [
                 'step_number' => (int) ($step['step_number'] ?? 1),
@@ -95,7 +120,9 @@ class AiPlatformClient
             ],
             'feedback' => $feedback,
             'animated' => $animated,
-        ];
+            // Keep the step's title unchanged across a revision.
+            'title' => trim((string) ($step['title'] ?? '')) ?: null,
+        ], fn ($v) => $v !== null);
 
         return $this->enqueue($payload, '/v1/lessons/step');
     }

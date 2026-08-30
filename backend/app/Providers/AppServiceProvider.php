@@ -131,6 +131,12 @@ class AppServiceProvider extends ServiceProvider
             Limit::perMinute(30)->by(self::limitKey($request)),
         ]);
 
+        // The unauthenticated public learning portal: generous, per-IP. Snapshots
+        // are cacheable (ETag), so this only guards abusive bursts.
+        RateLimiter::for('public', fn (Request $request) => [
+            Limit::perMinute(120)->by($request->ip()),
+        ]);
+
         // The tutor calls a paid model per message; keep a lid on it per learner.
         RateLimiter::for('tutor', fn (Request $request) => [
             Limit::perMinute(15)->by(self::limitKey($request)),

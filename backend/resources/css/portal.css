@@ -1,0 +1,93 @@
+@import 'tailwindcss';
+
+/*
+ * The public learning portal's design system. A calm, editorial reading
+ * experience — deliberately distinct from the dense studio (docs/13 §7): a warm
+ * paper ground, a scholarly teal, and a display serif for headings.
+ */
+@theme {
+    --font-sans: 'Public Sans', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
+    --font-display: 'Fraunces', ui-serif, Georgia, 'Times New Roman', serif;
+
+    /* Brand */
+    --color-ink: #17212b;
+    --color-paper: #faf8f4;
+    --color-teal-600: #0d8b7f;
+    --color-teal-700: #0b6e64;
+    --color-amber-500: #e8933b;
+}
+
+:root {
+    color-scheme: light dark;
+    --paper: #faf8f4;
+    --ink: #17212b;
+    --muted: #5b6672;
+    --line: #ece7de;
+    --card: #ffffff;
+    --accent: #0b6e64;
+    --accent-soft: #e6f1ef;
+    --on-accent: #ffffff; /* readable text on an --accent fill */
+}
+
+@media (prefers-color-scheme: dark) {
+    :root {
+        --paper: #0e141b;
+        --ink: #e7edf3;
+        --muted: #94a3b1;
+        --line: #1e2833;
+        --card: #141c25;
+        --accent: #2dd4bf;
+        --accent-soft: #10241f;
+        --on-accent: #0e141b; /* the dark-mode accent is bright — use dark ink on it */
+    }
+}
+
+html,
+body {
+    height: 100%;
+}
+
+body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+}
+
+/* A subtle warm grain so the paper doesn't read as flat white. */
+.portal-hero {
+    background:
+        radial-gradient(1200px 400px at 15% -10%, color-mix(in srgb, var(--accent) 12%, transparent), transparent),
+        radial-gradient(900px 500px at 95% 0%, color-mix(in srgb, var(--color-amber-500) 10%, transparent), transparent);
+}
+
+.font-display {
+    font-family: var(--font-display);
+    font-optical-sizing: auto;
+}
+
+::selection {
+    background: color-mix(in srgb, var(--accent) 22%, transparent);
+}
+
+/* A visible, on-brand focus ring for keyboard users. */
+:where(a, button, input):focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+    border-radius: 6px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+        animation-duration: 0.001ms !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+    }
+}
+
+/* The reveal player renders in a dark stage; keep its prose crisp. */
+.prose-portal :where(h1, h2, h3) {
+    font-family: var(--font-display);
+}

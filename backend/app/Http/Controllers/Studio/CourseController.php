@@ -47,6 +47,7 @@ class CourseController extends Controller
                 'title' => $course->title,
                 'code' => $course->code,
                 'subject' => $course->subject,
+                'category' => $course->category,
                 'grade_band' => $course->grade_band,
                 'language' => $course->language,
                 'workflow_state' => $course->workflow_state,
@@ -97,11 +98,16 @@ class CourseController extends Controller
                 'title' => $course->title,
                 'code' => $course->code,
                 'subject' => $course->subject,
+                'category' => $course->category,
                 'grade_band' => $course->grade_band,
                 'language' => $course->language,
                 'workflow_state' => $course->workflow_state,
                 // The version learners currently see, if any.
                 'published_number' => $course->latestPublication?->number,
+                'is_published' => $course->latestPublication !== null,
+                // Public-portal gating (settable once published).
+                'visibility' => $course->visibility,
+                'free_preview_lessons' => $course->free_preview_lessons,
                 'schema' => [
                     'name' => $course->schemaVersion->courseSchema->name,
                     'version' => $course->schemaVersion->version,
@@ -177,6 +183,7 @@ class CourseController extends Controller
             'title' => ['required', 'string', 'max:200'],
             'code' => ['nullable', 'string', 'max:40', Rule::unique('courses', 'code')],
             'subject' => ['nullable', 'string', 'max:80'],
+            'category' => ['nullable', Rule::in(\App\Portal\Category::values())],
             'grade_band' => ['nullable', 'string', 'max:40'],
             'language' => ['required', 'string', 'max:10'],
             'schema_version_id' => [
@@ -220,6 +227,7 @@ class CourseController extends Controller
             // Ignore this course's own row so re-saving an unchanged code passes.
             'code' => ['nullable', 'string', 'max:40', Rule::unique('courses', 'code')->ignore($course->id)],
             'subject' => ['nullable', 'string', 'max:80'],
+            'category' => ['nullable', Rule::in(\App\Portal\Category::values())],
             'grade_band' => ['nullable', 'string', 'max:40'],
             'language' => ['required', 'string', 'max:10'],
         ]);
@@ -227,6 +235,24 @@ class CourseController extends Controller
         $course->update($data);
 
         return back()->with('success', 'Course details updated.');
+    }
+
+    /**
+     * Public-portal visibility + free-preview limit. Unlike content, these are a
+     * publishing decision, so they're settable even on a published course.
+     */
+    public function visibility(Request $request, Course $course): RedirectResponse
+    {
+        Gate::authorize('update', $course);
+
+        $data = $request->validate([
+            'visibility' => ['required', Rule::in(Course::VISIBILITIES)],
+            'free_preview_lessons' => ['nullable', 'integer', 'min:1', 'max:999'],
+        ]);
+
+        $course->update($data);
+
+        return back()->with('success', 'Portal visibility updated.');
     }
 
     /**
