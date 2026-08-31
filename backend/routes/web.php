@@ -36,6 +36,8 @@ Route::get('/', [\App\Http\Controllers\Portal\PageController::class, 'home'])->n
 Route::get('/courses', [\App\Http\Controllers\Portal\PageController::class, 'catalog']);
 Route::get('/courses/{slug}', [\App\Http\Controllers\Portal\PageController::class, 'course'])->where('slug', '[A-Za-z0-9\-]+');
 Route::get('/courses/{slug}/learn', [\App\Http\Controllers\Portal\PageController::class, 'learn'])->where('slug', '[A-Za-z0-9\-]+');
+Route::view('/shorts', 'portal');          // shorts feed (SPA)
+Route::view('/my', 'portal');              // my learning (SPA)
 Route::view('/reset-password', 'portal'); // password-reset form (SPA reads token/email from the query)
 Route::get('/sitemap.xml', [\App\Http\Controllers\Portal\PageController::class, 'sitemap']);
 Route::get('/robots.txt', [\App\Http\Controllers\Portal\PageController::class, 'robots']);

@@ -18,6 +18,7 @@ export function Chrome({ children }: { children: ReactNode }) {
                     <nav className="flex items-center gap-1 text-sm font-medium">
                         <Link href="/" className="hidden rounded-lg px-3 py-2 text-[var(--muted)] transition-colors hover:text-[var(--ink)] sm:block">Home</Link>
                         <CoursesMenu />
+                        <Link href="/shorts" className="rounded-lg px-3 py-2 text-[var(--muted)] transition-colors hover:text-[var(--ink)]">Shorts</Link>
                         <AuthNav />
                     </nav>
                 </div>

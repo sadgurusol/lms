@@ -35,6 +35,9 @@ Route::get('/user', function (Request $request) {
 Route::middleware('throttle:public')->prefix('v1/portal')->group(function () {
     Route::get('/courses', [PortalCatalogController::class, 'index']);
     Route::get('/categories', [PortalCatalogController::class, 'categories']);
+    // Public shorts feed (animated steps) + anonymous view capture.
+    Route::get('/shorts', [\App\Http\Controllers\Portal\ShortsController::class, 'index']);
+    Route::post('/shorts/view', [\App\Http\Controllers\Portal\ShortsController::class, 'view']);
     Route::get('/courses/{course:slug}', [PortalCourseController::class, 'show']);
     Route::get('/courses/{course:slug}/content', [PortalCourseController::class, 'content']);
     // Public streaming of self-hosted course video (Mux plays from its own CDN).

@@ -1,5 +1,6 @@
 import type { OutlineNode } from '../api';
 import { getCourse } from '../api';
+import { ShareButton } from '../components/ShareButton';
 import { useAsync } from '../lib/useAsync';
 import { onTint, soft, subjectTheme } from '../lib/subject';
 import { usePageTitle } from '../lib/usePageTitle';
@@ -51,13 +52,22 @@ export default function Course({ slug }: { slug: string }) {
                     <p className="mt-4 text-[var(--muted)]">
                         <b className="font-semibold text-[var(--ink)] tabular-nums">{counts.lessons}</b> lesson{counts.lessons === 1 ? '' : 's'} · Free · No sign-up
                     </p>
-                    <Link
-                        href={startHref}
-                        className="mt-8 inline-flex items-center gap-2 rounded-full px-7 py-3 text-sm font-semibold shadow-sm transition hover:opacity-90"
-                        style={{ background: t.tint, color: onTint(t.tint) }}
-                    >
-                        {started ? 'Continue learning →' : 'Start learning →'}
-                    </Link>
+                    <div className="mt-8 flex flex-wrap items-center gap-3">
+                        <Link
+                            href={startHref}
+                            className="inline-flex items-center gap-2 rounded-full px-7 py-3 text-sm font-semibold shadow-sm transition hover:opacity-90"
+                            style={{ background: t.tint, color: onTint(t.tint) }}
+                        >
+                            {started ? 'Continue learning →' : 'Start learning →'}
+                        </Link>
+                        <ShareButton
+                            url={`/courses/${course.slug}`}
+                            title={course.title}
+                            text={`Learn ${course.title} — free, interactive lessons on Samchita`}
+                            tint={t.tint}
+                            className="inline-flex items-center gap-2 rounded-full border border-[var(--line)] px-5 py-3 text-sm font-semibold transition hover:border-[var(--accent)]"
+                        />
+                    </div>
                     {started && (
                         <div className="mt-6 max-w-xs">
                             <p className="text-xs font-semibold text-[var(--muted)] tabular-nums">{doneCount} of {counts.lessons} lessons done</p>

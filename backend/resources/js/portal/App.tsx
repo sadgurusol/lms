@@ -6,11 +6,13 @@ import Course from './pages/Course';
 import Learn from './pages/Learn';
 import My from './pages/My';
 import ResetPassword from './pages/ResetPassword';
+import Shorts from './pages/Shorts';
 
 export default function App() {
     const { path } = useRouter();
 
-    // The Learn player is full-bleed (its own dark chrome), so it renders outside Chrome.
+    // Full-bleed pages (own dark chrome) render outside Chrome.
+    if (path === '/shorts') return <Shorts />;
     const learn = path.match(/^\/courses\/([^/]+)\/learn$/);
     if (learn) return <Learn slug={decodeURIComponent(learn[1] ?? '')} />;
 

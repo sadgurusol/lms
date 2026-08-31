@@ -186,13 +186,15 @@ type Props = {
     /** Start playing on mount (used by the player, which arrives via a click gesture). */
     autoplay?: boolean;
     onPlayingChange?: (playing: boolean) => void;
+    /** Override the bare stage sizing (default is a 16:9 canvas; shorts pass 9:16). */
+    stageClass?: string;
 };
 
 /** Plays an animated reveal in the browser: beats appear one at a time, narrated
  *  with the Web Speech API. In `bare` mode the parent (lesson player) owns the
  *  container and the Play/Pause button via the imperative RevealHandle. */
 const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedRevealPreview(
-    { fragments, bare = false, autoplay = false, onPlayingChange },
+    { fragments, bare = false, autoplay = false, onPlayingChange, stageClass },
     ref,
 ) {
     const [revealed, setRevealed] = useState(-1);
@@ -321,7 +323,7 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
     // so a beat's image never pushes content into a hidden scroll area.
     const cur = revealed >= 0 ? fragments[revealed] ?? null : null;
     const stage = (
-        <div className="relative mx-auto aspect-video max-h-full w-full max-w-4xl overflow-hidden rounded-lg bg-black/[0.02] dark:bg-white/[0.03]">
+        <div className={`relative mx-auto overflow-hidden rounded-lg bg-black/[0.02] dark:bg-white/[0.03] ${stageClass ?? 'aspect-video max-h-full w-full max-w-4xl'}`}>
             {cur ? (
                 <Beat
                     key={`${runId.current}-${revealed}`}

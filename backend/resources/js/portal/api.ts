@@ -1,3 +1,4 @@
+import type { Fragment } from '@/studio/components/AnimatedRevealPreview';
 import type { Block } from '@/studio/components/BlockView';
 
 export type CourseCardData = {
@@ -68,5 +69,28 @@ async function json<T>(url: string): Promise<T> {
 
 export const getCatalog = () => json<Catalog>(`${base}/courses`);
 export const getCategories = () => json<{ categories: CategoryFacet[] }>(`${base}/categories`).then((d) => d.categories);
+
+export type Short = {
+    node_id: string;
+    course_slug: string;
+    course_title: string;
+    subject: string | null;
+    title: string;
+    fragments: Fragment[];
+    views: number;
+};
+
+export const getShorts = () => json<{ data: Short[] }>(`${base}/shorts`).then((d) => d.data);
+
+/** Best-effort anonymous view capture (fire-and-forget). */
+export function recordShortView(slug: string, nodeId: string): void {
+    void fetch(`${base}/shorts/view`, {
+        method: 'POST',
+        headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
+        body: JSON.stringify({ slug, node_id: nodeId }),
+        credentials: 'same-origin',
+        keepalive: true,
+    }).catch(() => {});
+}
 export const getCourse = (slug: string) => json<Landing>(`${base}/courses/${encodeURIComponent(slug)}`);
 export const getContent = (slug: string) => json<Content>(`${base}/courses/${encodeURIComponent(slug)}/content`);
