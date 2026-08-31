@@ -80,7 +80,8 @@ export type Short = {
     views: number;
 };
 
-export const getShorts = () => json<{ data: Short[] }>(`${base}/shorts`).then((d) => d.data);
+export const getShorts = (focus?: string) =>
+    json<{ data: Short[] }>(`${base}/shorts${focus ? `?focus=${encodeURIComponent(focus)}` : ''}`).then((d) => d.data);
 
 /** Best-effort anonymous view capture (fire-and-forget). */
 export function recordShortView(slug: string, nodeId: string): void {

@@ -23,8 +23,9 @@ class ShortsController extends Controller
 
     public function __construct(private readonly CourseGate $gate) {}
 
-    /** A shuffled batch of shorts across every public course. */
-    public function index(): JsonResponse
+    /** A shuffled batch of shorts across every public course. `focus` (a node id,
+     *  from a shared link) is guaranteed first so the feed opens on it. */
+    public function index(Request $request): JsonResponse
     {
         $shorts = [];
 
@@ -37,7 +38,21 @@ class ShortsController extends Controller
             $this->collect($tree, $course, $shorts);
         }
 
+        $focus = (string) $request->query('focus', '');
+        $focused = null;
+        if ($focus !== '') {
+            $idx = array_search($focus, array_column($shorts, 'node_id'), true);
+            if ($idx !== false) {
+                $focused = $shorts[$idx];
+                unset($shorts[$idx]);
+                $shorts = array_values($shorts);
+            }
+        }
+
         shuffle($shorts);
+        if ($focused !== null) {
+            array_unshift($shorts, $focused);
+        }
         $shorts = array_slice($shorts, 0, self::MAX);
 
         // Attach view counts in one query.

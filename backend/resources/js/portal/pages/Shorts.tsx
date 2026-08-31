@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import AnimatedRevealPreview, { svgDataUri } from '@/studio/components/AnimatedRevealPreview';
+import AnimatedRevealPreview, { svgDataUri, type RevealHandle } from '@/studio/components/AnimatedRevealPreview';
 import { getShorts, recordShortView, type Short } from '../api';
 import { ShareButton } from '../components/ShareButton';
 import { subjectTheme } from '../lib/subject';
@@ -9,15 +9,16 @@ import { Link } from '../router';
 
 export default function Shorts() {
     usePageTitle('Shorts');
-    const { loading, data } = useAsync(getShorts, []);
+    const focus = new URLSearchParams(window.location.search).get('s') ?? undefined;
+    const { loading, data } = useAsync(() => getShorts(focus), []);
     const shorts = data ?? [];
     const [active, setActive] = useState(0);
-    const [audioReady, setAudioReady] = useState(false);
+    const [soundOn, setSoundOn] = useState(false);
     const viewed = useRef<Set<string>>(new Set());
     const containerRef = useRef<HTMLDivElement>(null);
 
-    // Which short is on screen — via IntersectionObserver, which is reliable on
-    // touch scrolling where scroll math (viewport/URL-bar changes) is not.
+    // Active short via IntersectionObserver — reliable on touch scrolling where
+    // scroll math (mobile URL-bar changes) is not.
     useEffect(() => {
         const c = containerRef.current;
         if (!c || !shorts.length) return;
@@ -82,14 +83,10 @@ export default function Shorts() {
                 ✕
             </Link>
 
-            <div
-                ref={containerRef}
-                onPointerDown={() => setAudioReady(true)}
-                className="h-full snap-y snap-mandatory overflow-y-auto overscroll-contain"
-            >
+            <div ref={containerRef} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-contain">
                 {shorts.map((s, i) => (
                     <section key={s.node_id} className="flex h-full snap-start snap-always items-center justify-center">
-                        <ShortCard short={s} active={i === active} audioReady={audioReady} />
+                        <ShortCard short={s} active={i === active} soundOn={soundOn} onEnableSound={() => setSoundOn(true)} />
                     </section>
                 ))}
             </div>
@@ -103,20 +100,46 @@ export default function Shorts() {
     );
 }
 
-function ShortCard({ short, active, audioReady }: { short: Short; active: boolean; audioReady: boolean }) {
+function ShortCard({
+    short,
+    active,
+    soundOn,
+    onEnableSound,
+}: {
+    short: Short;
+    active: boolean;
+    soundOn: boolean;
+    onEnableSound: () => void;
+}) {
     const t = subjectTheme(short.subject);
+    const ref = useRef<RevealHandle>(null);
+    const [playing, setPlaying] = useState(true);
+
+    // First tap enables sound and replays this short WITH audio (synchronously, so
+    // it counts as the user gesture browsers require). After that, tap = play/pause.
+    function onTap() {
+        if (!soundOn) {
+            onEnableSound();
+            ref.current?.restart();
+        } else {
+            ref.current?.toggle();
+        }
+    }
+
+    const showPlay = active && (!soundOn || !playing);
 
     return (
         <div className="relative h-full w-full overflow-hidden bg-black text-white md:aspect-[9/16] md:w-auto md:rounded-2xl">
-            <div className="flex h-full w-full items-center justify-center p-3 pb-40">
+            {/* Reveal stage (non-interactive; the tap layer above drives play/pause) */}
+            <div className="pointer-events-none flex h-full w-full items-center justify-center p-3 pb-40">
                 {active ? (
-                    // Key includes audioReady so the reveal remounts once the viewer
-                    // interacts — replaying this beat with sound (autoplay had blocked it).
                     <AnimatedRevealPreview
-                        key={`${short.node_id}-${audioReady ? 'a' : 's'}`}
+                        ref={ref}
+                        key={short.node_id}
                         bare
                         autoplay
                         fragments={short.fragments}
+                        onPlayingChange={setPlaying}
                         stageClass="h-full w-full max-h-full"
                     />
                 ) : (
@@ -124,14 +147,20 @@ function ShortCard({ short, active, audioReady }: { short: Short; active: boolea
                 )}
             </div>
 
-            {active && !audioReady && (
-                <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
-                    🔊 Tap for sound
-                </div>
+            {/* Tap layer: play/pause + sound-enable */}
+            {active && (
+                <button onClick={onTap} className="absolute inset-0 z-10 flex flex-col items-center justify-center" aria-label={playing ? 'Pause' : 'Play'}>
+                    {showPlay && (
+                        <>
+                            <span className="grid h-16 w-16 place-items-center rounded-full bg-black/45 text-3xl backdrop-blur">▶</span>
+                            {!soundOn && <span className="mt-3 rounded-full bg-black/45 px-3 py-1 text-xs font-semibold">Tap to play with sound</span>}
+                        </>
+                    )}
+                </button>
             )}
 
-            {/* Bottom overlay: title, course, CTA + share */}
-            <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-5 pt-16">
+            {/* Bottom overlay: title, course, CTA + share (above the tap layer) */}
+            <div className="pointer-events-none absolute inset-x-0 bottom-0 z-20 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-5 pt-16">
                 {short.subject && (
                     <span className="text-xs font-semibold uppercase tracking-wide" style={{ color: t.tint }}>{short.subject}</span>
                 )}
@@ -139,7 +168,7 @@ function ShortCard({ short, active, audioReady }: { short: Short; active: boolea
                 <p className="mt-0.5 text-sm text-white/60 tabular-nums">
                     {short.course_title} · {short.views.toLocaleString()} view{short.views === 1 ? '' : 's'}
                 </p>
-                <div className="mt-4 flex items-center gap-3">
+                <div className="pointer-events-auto mt-4 flex items-center gap-3">
                     <Link
                         href={`/courses/${short.course_slug}`}
                         className="rounded-full bg-white px-5 py-2.5 text-sm font-semibold text-black transition hover:bg-white/90"
@@ -147,9 +176,9 @@ function ShortCard({ short, active, audioReady }: { short: Short; active: boolea
                         Watch full course →
                     </Link>
                     <ShareButton
-                        url={`/courses/${short.course_slug}`}
-                        title={short.course_title}
-                        text={`${short.title} — from “${short.course_title}” on Samchita`}
+                        url={`/shorts?s=${short.node_id}`}
+                        title={short.title}
+                        text={`${short.title} — a short from “${short.course_title}” on Samchita`}
                         className="inline-flex items-center gap-2 rounded-full border border-white/30 px-4 py-2.5 text-sm font-semibold text-white transition hover:border-white/60"
                     />
                 </div>
@@ -165,7 +194,6 @@ function ShortPoster({ short }: { short: Short }) {
         <div className="flex h-full flex-col items-center justify-center gap-5 p-6 text-center">
             {src ? <img src={src} alt="" className="max-h-[45%] max-w-full object-contain opacity-90" /> : null}
             <p className="font-display text-xl font-semibold text-white/90 text-balance">{short.title}</p>
-            <span className="rounded-full border border-white/20 px-3 py-1 text-xs text-white/60">Scroll to play</span>
         </div>
     );
 }
