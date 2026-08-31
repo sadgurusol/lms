@@ -12,8 +12,30 @@ export default function Shorts() {
     const { loading, data } = useAsync(getShorts, []);
     const shorts = data ?? [];
     const [active, setActive] = useState(0);
+    const [audioReady, setAudioReady] = useState(false);
     const viewed = useRef<Set<string>>(new Set());
     const containerRef = useRef<HTMLDivElement>(null);
+
+    // Which short is on screen — via IntersectionObserver, which is reliable on
+    // touch scrolling where scroll math (viewport/URL-bar changes) is not.
+    useEffect(() => {
+        const c = containerRef.current;
+        if (!c || !shorts.length) return;
+        const sections = Array.from(c.children).filter((el) => el.tagName === 'SECTION') as HTMLElement[];
+        const io = new IntersectionObserver(
+            (entries) => {
+                for (const e of entries) {
+                    if (e.isIntersecting && e.intersectionRatio >= 0.55) {
+                        const i = sections.indexOf(e.target as HTMLElement);
+                        if (i >= 0) setActive(i);
+                    }
+                }
+            },
+            { root: c, threshold: [0.55] },
+        );
+        sections.forEach((s) => io.observe(s));
+        return () => io.disconnect();
+    }, [shorts.length]);
 
     // Count a view ~1.5s after a short becomes active (once per short).
     useEffect(() => {
@@ -41,13 +63,6 @@ export default function Shorts() {
         (containerRef.current?.children[n] as HTMLElement | undefined)?.scrollIntoView({ behavior: 'smooth' });
     }
 
-    function onScroll() {
-        const c = containerRef.current;
-        if (!c) return;
-        const i = Math.round(c.scrollTop / c.clientHeight);
-        if (i !== active) setActive(i);
-    }
-
     if (loading) {
         return <div className="flex h-screen items-center justify-center bg-black text-white/60">Loading shorts…</div>;
     }
@@ -67,10 +82,14 @@ export default function Shorts() {
                 ✕
             </Link>
 
-            <div ref={containerRef} onScroll={onScroll} className="h-full snap-y snap-mandatory overflow-y-auto overscroll-contain">
+            <div
+                ref={containerRef}
+                onPointerDown={() => setAudioReady(true)}
+                className="h-full snap-y snap-mandatory overflow-y-auto overscroll-contain"
+            >
                 {shorts.map((s, i) => (
                     <section key={s.node_id} className="flex h-full snap-start snap-always items-center justify-center">
-                        <ShortCard short={s} active={i === active} />
+                        <ShortCard short={s} active={i === active} audioReady={audioReady} />
                     </section>
                 ))}
             </div>
@@ -84,18 +103,32 @@ export default function Shorts() {
     );
 }
 
-function ShortCard({ short, active }: { short: Short; active: boolean }) {
+function ShortCard({ short, active, audioReady }: { short: Short; active: boolean; audioReady: boolean }) {
     const t = subjectTheme(short.subject);
 
     return (
         <div className="relative h-full w-full overflow-hidden bg-black text-white md:aspect-[9/16] md:w-auto md:rounded-2xl">
             <div className="flex h-full w-full items-center justify-center p-3 pb-40">
                 {active ? (
-                    <AnimatedRevealPreview key={short.node_id} bare autoplay fragments={short.fragments} stageClass="h-full w-full max-h-full" />
+                    // Key includes audioReady so the reveal remounts once the viewer
+                    // interacts — replaying this beat with sound (autoplay had blocked it).
+                    <AnimatedRevealPreview
+                        key={`${short.node_id}-${audioReady ? 'a' : 's'}`}
+                        bare
+                        autoplay
+                        fragments={short.fragments}
+                        stageClass="h-full w-full max-h-full"
+                    />
                 ) : (
                     <ShortPoster short={short} />
                 )}
             </div>
+
+            {active && !audioReady && (
+                <div className="pointer-events-none absolute left-1/2 top-4 -translate-x-1/2 rounded-full bg-white/15 px-3 py-1.5 text-xs font-semibold text-white backdrop-blur">
+                    🔊 Tap for sound
+                </div>
+            )}
 
             {/* Bottom overlay: title, course, CTA + share */}
             <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/50 to-transparent p-5 pt-16">

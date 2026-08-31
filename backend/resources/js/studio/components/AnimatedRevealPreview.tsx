@@ -247,7 +247,15 @@ const AnimatedRevealPreview = forwardRef<RevealHandle, Props>(function AnimatedR
             };
             a.addEventListener('ended', fin);
             a.addEventListener('error', fin);
-            a.play().catch(() => {});
+            a.play().catch(() => {
+                // Autoplay blocked (no user gesture yet — e.g. the shorts feed on
+                // reload). Don't freeze on the 60s safety: advance the reveal at a
+                // natural reading pace so it plays through silently until the
+                // viewer taps, after which later beats get sound.
+                const voice = (frag.voice ?? '').trim();
+                const secs = voice ? Math.max(2.5, voice.length / 12 + 1) : Math.max(2, (frag.duration_ms ?? 2500) / 1000);
+                window.setTimeout(fin, secs * 1000);
+            });
             window.setTimeout(fin, 60000); // ultimate fallback if it stalls
             return;
         }
